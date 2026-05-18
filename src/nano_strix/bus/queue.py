@@ -19,8 +19,10 @@ class EventBus:
         task_dir.mkdir(parents=True)
 
         state = TaskState(
-            task_id=task_id, stages=stages,
-            current_stage=None, status="pending",
+            task_id=task_id,
+            stages=stages,
+            current_stage=None,
+            status="pending",
         )
         self.update_state(state)
         return state
@@ -39,27 +41,34 @@ class EventBus:
             if not line:
                 continue
             data = json.loads(line)
-            events.append(TaskEvent(
-                task_id=data["task_id"],
-                event_type=data["event_type"],
-                stage=data.get("stage"),
-                payload=data.get("payload", {}),
-                timestamp=datetime.fromisoformat(data["timestamp"]),
-            ))
+            events.append(
+                TaskEvent(
+                    task_id=data["task_id"],
+                    event_type=data["event_type"],
+                    stage=data.get("stage"),
+                    payload=data.get("payload", {}),
+                    timestamp=datetime.fromisoformat(data["timestamp"]),
+                )
+            )
         return events
 
     def update_state(self, state: TaskState) -> None:
         state_file = self._root / state.task_id / "state.json"
         state_file.parent.mkdir(parents=True, exist_ok=True)
         with open(state_file, "w") as f:
-            json.dump({
-                "task_id": state.task_id,
-                "stages": state.stages,
-                "current_stage": state.current_stage,
-                "status": state.status,
-                "stage_results": state.stage_results,
-                "error": state.error,
-            }, f, ensure_ascii=False, indent=2)
+            json.dump(
+                {
+                    "task_id": state.task_id,
+                    "stages": state.stages,
+                    "current_stage": state.current_stage,
+                    "status": state.status,
+                    "stage_results": state.stage_results,
+                    "error": state.error,
+                },
+                f,
+                ensure_ascii=False,
+                indent=2,
+            )
 
     def get_state(self, task_id: str) -> TaskState:
         state_file = self._root / task_id / "state.json"

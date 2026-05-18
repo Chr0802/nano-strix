@@ -6,7 +6,6 @@ from typing import Any
 
 from nano_strix.config.schema import AppConfig, PipelineConfig
 
-
 STAGE_SCRIPTS = {
     "per_file": "src/nano_strix/agents/per_file.py",
     "cross_file": "src/nano_strix/agents/cross_file.py",

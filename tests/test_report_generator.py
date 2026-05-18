@@ -1,25 +1,36 @@
 # tests/test_report_generator.py
 from pathlib import Path
-from nano_strix.report.generator import ReportGenerator
+
 from nano_strix.report.attack_graph import AttackGraph
+from nano_strix.report.generator import ReportGenerator
 from nano_strix.shared.models import Finding
 
 
 def test_report_generator_generate(tmp_path: Path):
     findings = [
         Finding(
-            id="f-001", title="SQL Injection", severity="critical",
-            category="sql_injection", file_path="src/auth.py",
-            line_range=(42, 58), description="SQLi in login",
+            id="f-001",
+            title="SQL Injection",
+            severity="critical",
+            category="sql_injection",
+            file_path="src/auth.py",
+            line_range=(42, 58),
+            description="SQLi in login",
             code_snippet="query = f'SELECT * FROM users WHERE id={uid}'",
-            recommendation="Use parameterized queries", confidence=0.95,
+            recommendation="Use parameterized queries",
+            confidence=0.95,
         ),
         Finding(
-            id="f-002", title="XSS", severity="high",
-            category="xss", file_path="src/views.py",
-            line_range=(10, 20), description="Reflected XSS",
+            id="f-002",
+            title="XSS",
+            severity="high",
+            category="xss",
+            file_path="src/views.py",
+            line_range=(10, 20),
+            description="Reflected XSS",
             code_snippet="echo(user_input)",
-            recommendation="Sanitize output", confidence=0.8,
+            recommendation="Sanitize output",
+            confidence=0.8,
         ),
     ]
 
@@ -33,10 +44,16 @@ def test_report_generator_generate(tmp_path: Path):
 def test_attack_graph_build():
     findings = [
         Finding(
-            id="f-001", title="SQLi", severity="critical",
-            category="sql_injection", file_path="src/auth.py",
-            line_range=(42, 58), description="SQLi", code_snippet="",
-            recommendation="", confidence=0.9,
+            id="f-001",
+            title="SQLi",
+            severity="critical",
+            category="sql_injection",
+            file_path="src/auth.py",
+            line_range=(42, 58),
+            description="SQLi",
+            code_snippet="",
+            recommendation="",
+            confidence=0.9,
         ),
     ]
     graph = AttackGraph(findings)

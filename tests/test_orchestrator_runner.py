@@ -1,8 +1,10 @@
 import json
-import pytest
 from pathlib import Path
-from nano_strix.orchestrator.runner import OrchestratorRunner
+
+import pytest
+
 from nano_strix.config.schema import AppConfig, PipelineConfig
+from nano_strix.orchestrator.runner import OrchestratorRunner
 
 
 @pytest.fixture

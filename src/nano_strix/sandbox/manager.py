@@ -17,6 +17,7 @@ class SandboxManager:
             return ProcessSandbox(config, self._workspace)
         elif config.sandbox_type == "docker":
             from nano_strix.sandbox.docker import DockerSandbox
+
             return DockerSandbox(config, self._workspace)
         else:
             raise ValueError(f"Unknown sandbox type: {config.sandbox_type}")

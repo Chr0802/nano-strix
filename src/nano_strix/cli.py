@@ -89,19 +89,21 @@ def config_show():
 @click.option("--output", type=click.Path(), help="Output directory")
 @click.option("--verbose", is_flag=True, help="Verbose logging")
 @click.option("--no-snapshot", is_flag=True, help="Analyze target in-place (no copy)")
-def run(target, pipeline, input_overrides, config_path, model, output, verbose, no_snapshot):
+def run(
+    target, pipeline, input_overrides, config_path, model, output, verbose, no_snapshot
+):
     """Run a penetration test pipeline."""
-    cfg = load_config(Path(config_path) if config_path else DEFAULT_CONFIG_PATH)
+    load_config(Path(config_path) if config_path else DEFAULT_CONFIG_PATH)  # noqa: F841
 
-    PIPELINE_PRESETS = {
+    pipeline_presets = {
         "full": ["per_file", "cross_file", "exploit", "report"],
         "analysis": ["per_file", "cross_file", "report"],
         "exploit": ["exploit", "report"],
         "quick": ["per_file", "report"],
     }
 
-    if pipeline in PIPELINE_PRESETS:
-        stages = PIPELINE_PRESETS[pipeline]
+    if pipeline in pipeline_presets:
+        stages = pipeline_presets[pipeline]
     else:
         stages = [s.strip() for s in pipeline.split(",")]
 

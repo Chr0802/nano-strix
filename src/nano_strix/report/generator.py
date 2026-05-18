@@ -1,8 +1,8 @@
 # src/nano_strix/report/generator.py
 from __future__ import annotations
 
-from nano_strix.shared.models import Finding, ExploitResult
 from nano_strix.report.attack_graph import AttackGraph
+from nano_strix.shared.models import ExploitResult, Finding
 
 
 class ReportGenerator:
@@ -36,7 +36,11 @@ class ReportGenerator:
                 lines.append(f"| {sev} | {severity_counts[sev]} |")
         return "\n".join(lines)
 
-    def _findings_detail(self, findings: list[Finding], exploit_results: list[ExploitResult] | None) -> str:
+    def _findings_detail(
+        self,
+        findings: list[Finding],
+        exploit_results: list[ExploitResult] | None,
+    ) -> str:
         verified_map = {}
         if exploit_results:
             for er in exploit_results:
@@ -45,7 +49,8 @@ class ReportGenerator:
         lines = ["## 2. 漏洞详情\n"]
         for f in findings:
             lines.append(f"### [{f.severity.upper()}] {f.title}")
-            lines.append(f"- **文件:** `{f.file_path}:{f.line_range[0]}-{f.line_range[1]}`")
+            loc = f"{f.file_path}:{f.line_range[0]}-{f.line_range[1]}"
+            lines.append(f"- **文件:** `{loc}`")
             lines.append(f"- **置信度:** {f.confidence}")
             lines.append(f"- **描述:** {f.description}")
             lines.append(f"- **代码片段:**\n```python\n{f.code_snippet}\n```")
@@ -59,7 +64,11 @@ class ReportGenerator:
         return "\n".join(lines)
 
     def _fix_summary(self, findings: list[Finding]) -> str:
-        lines = ["## 4. 修复建议汇总\n", "| 优先级 | 漏洞 | 修复建议 |", "|--------|------|----------|"]
+        lines = [
+            "## 4. 修复建议汇总\n",
+            "| 优先级 | 漏洞 | 修复建议 |",
+            "|--------|------|----------|",
+        ]
         for i, f in enumerate(findings, 1):
             lines.append(f"| {i} | {f.title} | {f.recommendation} |")
         return "\n".join(lines)

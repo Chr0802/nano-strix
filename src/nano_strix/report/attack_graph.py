@@ -13,7 +13,8 @@ class AttackGraph:
         for f in self._findings:
             node_id = f.id.replace("-", "_")
             severity_tag = f"[{f.severity.upper()}]"
-            lines.append(f'    {node_id}["{severity_tag} {f.title}<br/>{f.file_path}:{f.line_range[0]}"]')
+            label = f"{severity_tag} {f.title}<br/>{f.file_path}:{f.line_range[0]}"
+            lines.append(f'    {node_id}["{label}"]')
 
         # Chain findings by file dependency (simple heuristic)
         for i, f in enumerate(self._findings):
