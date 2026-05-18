@@ -1,4 +1,5 @@
 """strix-per-file agent: per-file static analysis. Not yet implemented."""
+
 import json
 import sys
 
@@ -12,6 +13,7 @@ def main():
         "payload": {"error": "per_file agent not yet implemented"},
     }
     print(json.dumps(result))
+
 
 if __name__ == "__main__":
     main()
