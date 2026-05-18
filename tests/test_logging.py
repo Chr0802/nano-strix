@@ -83,8 +83,12 @@ def test_tool_logger(tmp_path: Path):
     log_file = tmp_path / "tool.jsonl"
     logger = ToolLogger(log_file)
     logger.log_execution(
-        "t-001", "per_file", "read_file",
-        {"path": "src/a.py"}, 1523, 5.0,
+        "t-001",
+        "per_file",
+        "read_file",
+        {"path": "src/a.py"},
+        1523,
+        5.0,
     )
 
     lines = log_file.read_text().strip().split("\n")

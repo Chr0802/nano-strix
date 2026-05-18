@@ -12,23 +12,26 @@ class LogEntry:
     task_id: str
     stage: str | None
     category: str  # task / llm / tool / sandbox / ipc
-    level: str     # debug / info / warning / error
+    level: str  # debug / info / warning / error
     event: str
     data: dict[str, Any]
     duration: float | None = None
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def to_json(self) -> str:
-        return json.dumps({
-            "timestamp": self.timestamp.isoformat(),
-            "task_id": self.task_id,
-            "stage": self.stage,
-            "category": self.category,
-            "level": self.level,
-            "event": self.event,
-            "data": self.data,
-            "duration": self.duration,
-        }, ensure_ascii=False)
+        return json.dumps(
+            {
+                "timestamp": self.timestamp.isoformat(),
+                "task_id": self.task_id,
+                "stage": self.stage,
+                "category": self.category,
+                "level": self.level,
+                "event": self.event,
+                "data": self.data,
+                "duration": self.duration,
+            },
+            ensure_ascii=False,
+        )
 
 
 class JSONLLogger:
