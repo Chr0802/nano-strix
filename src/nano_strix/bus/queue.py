@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 from nano_strix.bus.events import TaskEvent, TaskState
@@ -43,6 +44,7 @@ class EventBus:
                 event_type=data["event_type"],
                 stage=data.get("stage"),
                 payload=data.get("payload", {}),
+                timestamp=datetime.fromisoformat(data["timestamp"]),
             ))
         return events
 
