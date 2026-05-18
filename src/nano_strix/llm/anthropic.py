@@ -51,9 +51,8 @@ class AnthropicProvider(LLMProvider):
                     ToolCall(id=block.id, name=block.name, arguments=block.input)
                 )
 
-        finish_reason = (
-            "stop" if response.stop_reason == "end_turn" else response.stop_reason
-        )
+        reason_map = {"end_turn": "stop", "tool_use": "tool_calls"}
+        finish_reason = reason_map.get(response.stop_reason, response.stop_reason)
 
         return LLMResponse(
             content=content,
@@ -73,6 +72,7 @@ class AnthropicProvider(LLMProvider):
         temperature: float = 0.7,
         max_tokens: int = 4096,
     ) -> AsyncIterator[str]:
+        """Stream text chunks only. Use chat() for tool-calling flows."""
         kwargs: dict[str, Any] = {
             "model": self.model,
             "messages": messages,

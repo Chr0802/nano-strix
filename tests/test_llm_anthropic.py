@@ -89,7 +89,7 @@ async def test_anthropic_chat_with_tool_calls(provider):
             tools=[{"name": "search", "description": "Search"}],
         )
         assert resp.content == "Let me look that up."
-        assert resp.finish_reason == "tool_use"
+        assert resp.finish_reason == "tool_calls"
         assert len(resp.tool_calls) == 1
         assert resp.tool_calls[0].id == "toolu_123"
         assert resp.tool_calls[0].name == "search"
