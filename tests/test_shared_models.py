@@ -1,4 +1,4 @@
-from nano_strix.shared.models import Finding, ExploitResult
+from nano_strix.shared.models import ExploitResult, Finding
 
 
 def test_finding_creation():
@@ -10,7 +10,7 @@ def test_finding_creation():
         file_path="src/auth.py",
         line_range=(42, 58),
         description="User input directly interpolated into SQL query",
-        code_snippet="query = f\"SELECT * FROM users WHERE id={user_id}\"",
+        code_snippet='query = f"SELECT * FROM users WHERE id={user_id}"',
         recommendation="Use parameterized queries",
         confidence=0.95,
     )
@@ -79,3 +79,30 @@ def test_exploit_result_to_dict():
     )
     d = r.to_dict()
     assert d["verified"] is True
+
+
+def test_finding_round_trip():
+    f = Finding(
+        id="f-001",
+        title="SQL Injection",
+        severity="critical",
+        category="sql_injection",
+        file_path="src/auth.py",
+        line_range=(42, 58),
+        description="SQLi in login",
+        code_snippet="query = f'SELECT * FROM users WHERE id={uid}'",
+        recommendation="Use parameterized queries",
+        confidence=0.95,
+    )
+    assert Finding.from_dict(f.to_dict()) == f
+
+
+def test_exploit_result_round_trip():
+    r = ExploitResult(
+        finding_id="f-001",
+        verified=True,
+        poc_script="poc.py",
+        output="ok",
+        exit_code=0,
+    )
+    assert ExploitResult.from_dict(r.to_dict()) == r
