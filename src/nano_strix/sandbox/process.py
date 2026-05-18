@@ -5,7 +5,8 @@ import shutil
 import time
 from pathlib import Path
 
-from nano_strix.sandbox.base import ExecutionResult, Sandbox, SandboxConfig
+from nano_strix.config.schema import SandboxConfig
+from nano_strix.sandbox.base import ExecutionResult, Sandbox
 
 
 class ProcessSandbox(Sandbox):

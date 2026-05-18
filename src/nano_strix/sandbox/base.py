@@ -1,19 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-
-
-@dataclass
-class SandboxConfig:
-    sandbox_type: str = "process"  # docker / process
-    image: str = "python:3.12-slim"
-    network: str = "none"
-    memory_limit: str = "512m"
-    cpu_limit: float = 1.0
-    timeout: int = 600
-    env_vars: dict[str, str] = field(default_factory=dict)
-    volumes: list[dict[str, str]] = field(default_factory=list)
+from dataclasses import dataclass
 
 
 @dataclass

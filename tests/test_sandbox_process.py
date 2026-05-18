@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from nano_strix.sandbox.base import SandboxConfig
+from nano_strix.config.schema import SandboxConfig
 from nano_strix.sandbox.process import ProcessSandbox
 
 

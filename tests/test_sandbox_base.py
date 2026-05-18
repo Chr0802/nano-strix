@@ -1,11 +1,12 @@
 import pytest
 
-from nano_strix.sandbox.base import ExecutionResult, Sandbox, SandboxConfig
+from nano_strix.config.schema import SandboxConfig
+from nano_strix.sandbox.base import ExecutionResult, Sandbox
 
 
 def test_sandbox_config_defaults():
     cfg = SandboxConfig()
-    assert cfg.sandbox_type == "process"
+    assert cfg.sandbox_type == "docker"
     assert cfg.timeout == 600
 
 
