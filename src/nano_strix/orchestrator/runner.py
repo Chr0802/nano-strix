@@ -10,6 +10,7 @@ STAGE_SCRIPTS = {
     "per_file": "src/nano_strix/agents/per_file.py",
     "cross_file": "src/nano_strix/agents/cross_file.py",
     "exploit": "src/nano_strix/agents/exploit.py",
+    "report": "src/nano_strix/agents/report.py",
 }
 
 
