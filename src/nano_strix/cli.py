@@ -240,12 +240,6 @@ def report(task_id, fmt):
 @click.option("--verbose", is_flag=True, help="Verbose logging")
 def run_batch(targets_file, config_path, model, output, verbose):
     """Run pipeline on multiple targets from a file (one path per line)."""
-    import asyncio
-
-    from nano_strix.agents.manager import AgentManager
-    from nano_strix.bus.queue import EventBus
-    from nano_strix.orchestrator.scheduler import StageScheduler
-
     cfg = load_config(Path(config_path) if config_path else DEFAULT_CONFIG_PATH)
     if model:
         cfg.llm.model = model
@@ -258,36 +252,18 @@ def run_batch(targets_file, config_path, model, output, verbose):
     ]
 
     if not targets:
-        click.echo("No targets found in file.")
-        return
+        raise click.UsageError("No targets found in file.")
 
     workspace = Path(output) if output else Path.cwd()
     workspace.mkdir(parents=True, exist_ok=True)
 
-    event_bus = EventBus(workspace / "tasks")
-    agent_manager = AgentManager(workspace=workspace, config=cfg.ipc)
-    scheduler = StageScheduler(
+    if verbose:
+        logging.basicConfig(level=logging.DEBUG)
+
+    asyncio.run(_execute_pipeline(
         workspace=workspace,
         config=cfg,
-        agent_manager=agent_manager,
-        event_bus=event_bus,
-    )
-
-    click.echo(f"Targets: {len(targets)}")
-    click.echo(f"Pipeline: {' -> '.join(cfg.pipeline.stages)}")
-    for stage, sc in cfg.scheduler.stages.items():
-        click.echo(
-            f"  {stage}: max_concurrent={sc.max_concurrent}, "
-            f"max_retries={sc.max_retries}"
-        )
-    click.echo("Starting batch...")
-
-    async def _run():
-        task_ids = await scheduler.submit_batch(targets)
-        click.echo(f"Submitted {len(task_ids)} tasks")
-        await scheduler.run()
-        for tid in task_ids:
-            state = event_bus.get_state(tid)
-            click.echo(f"  {tid}: {state.status}")
-
-    asyncio.run(_run())
+        targets=targets,
+        stages=cfg.pipeline.stages,
+        verbose=verbose,
+    ))
