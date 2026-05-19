@@ -66,8 +66,13 @@ class StageScheduler:
 
     async def resume_task(self, task_id: str, target_path: str) -> None:
         state = self._event_bus.get_state(task_id)
+        if state.status == "running":
+            raise RuntimeError(f"Task {task_id} is already running")
         for stage in self._stages:
             if stage not in state.stage_results:
+                state.status = "pending"
+                state.error = None
+                self._event_bus.update_state(state)
                 self._remaining += 1
                 await self._queues[stage].put((task_id, target_path))
                 return
