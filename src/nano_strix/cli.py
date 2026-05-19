@@ -214,22 +214,64 @@ def run(
 
 @main.command()
 @click.argument("task_id")
-def resume(task_id):
+@click.option("--config", "config_path", type=click.Path(), help="Config file path")
+@click.option("--output", type=click.Path(), help="Output directory (workspace)")
+def resume(task_id, config_path, output):
     """Resume an interrupted task."""
-    click.echo(f"Resuming task {task_id}...")
+    cfg = load_config(Path(config_path) if config_path else DEFAULT_CONFIG_PATH)
 
+    workspace = Path(output) if output else Path.cwd()
+    tasks_dir = workspace / "tasks"
 
-@main.command()
-@click.argument("task_id")
-@click.option(
-    "--format",
-    "fmt",
-    default="markdown",
-    type=click.Choice(["markdown", "html", "pdf"]),
-)
-def report(task_id, fmt):
-    """Regenerate report from existing results."""
-    click.echo(f"Generating {fmt} report for task {task_id}...")
+    if not (tasks_dir / task_id / "state.json").exists():
+        raise click.ClickException(f"Task not found: {task_id}")
+
+    event_bus = EventBus(tasks_dir)
+    state = event_bus.get_state(task_id)
+
+    # Check if already fully completed
+    incomplete_stages = [
+        s for s in state.stages if s not in state.stage_results
+    ]
+    if not incomplete_stages:
+        click.echo(f"Task {task_id} already completed.")
+        return
+
+    # Extract target path from task_created event
+    events = event_bus.get_events(task_id)
+    target_path = None
+    for ev in events:
+        if ev.event_type == "task_created":
+            target_path = ev.payload.get("target")
+            break
+
+    if not target_path:
+        target_path = "unknown"
+
+    click.echo(
+        f"Resuming task {task_id}: "
+        f"remaining stages: {' -> '.join(incomplete_stages)}"
+    )
+
+    agent_manager = AgentManager(workspace=workspace, config=cfg.ipc)
+    scheduler = StageScheduler(
+        workspace=workspace,
+        config=cfg,
+        agent_manager=agent_manager,
+        event_bus=event_bus,
+    )
+
+    async def _resume():
+        await scheduler.resume_task(task_id, target_path)
+        await scheduler.run()
+        final_state = event_bus.get_state(task_id)
+        status_label = final_state.status.upper()
+        if final_state.status == "failed":
+            click.echo(f"  [{status_label}] {task_id}: {final_state.error or 'unknown error'}")
+        else:
+            click.echo(f"  [{status_label}] {task_id}")
+
+    asyncio.run(_resume())
 
 
 @main.command("run-batch")
