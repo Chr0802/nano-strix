@@ -1,10 +1,71 @@
+import asyncio
+import logging
 from pathlib import Path
 
 import click
 
+from nano_strix.agents.manager import AgentManager
+from nano_strix.bus.queue import EventBus
 from nano_strix.config.loader import load_config
 from nano_strix.config.paths import DEFAULT_CONFIG_PATH
 from nano_strix.config.schema import AppConfig
+from nano_strix.orchestrator.scheduler import StageScheduler
+
+logger = logging.getLogger(__name__)
+
+
+async def _execute_pipeline(
+    workspace: Path,
+    config: AppConfig,
+    targets: list[str],
+    stages: list[str],
+    input_overrides: dict[str, str] | None = None,
+    verbose: bool = False,
+) -> list[str]:
+    config.pipeline.stages = stages
+    if input_overrides:
+        config.pipeline.input_overrides = input_overrides
+
+    tasks_dir = workspace / "tasks"
+    event_bus = EventBus(tasks_dir)
+    agent_manager = AgentManager(workspace=workspace, config=config.ipc)
+    scheduler = StageScheduler(
+        workspace=workspace,
+        config=config,
+        agent_manager=agent_manager,
+        event_bus=event_bus,
+    )
+
+    click.echo(f"Targets: {len(targets)}")
+    click.echo(f"Pipeline: {' -> '.join(stages)}")
+    if verbose:
+        for stage_name, sc in config.scheduler.stages.items():
+            click.echo(
+                f"  {stage_name}: max_concurrent={sc.max_concurrent}, "
+                f"max_retries={sc.max_retries}"
+            )
+
+    task_ids = await scheduler.submit_batch(targets)
+    click.echo(f"Submitted {len(task_ids)} tasks")
+    await scheduler.run()
+
+    failed_count = 0
+    for tid in task_ids:
+        state = event_bus.get_state(tid)
+        status_label = state.status.upper()
+        if state.status == "failed":
+            failed_count += 1
+            click.echo(f"  [{status_label}] {tid}: {state.error or 'unknown error'}")
+        else:
+            click.echo(f"  [{status_label}] {tid}")
+
+    if failed_count > 0:
+        click.echo(
+            f"\n{failed_count} task(s) failed. "
+            f"Use 'nano-strix resume <task_id>' to retry."
+        )
+
+    return task_ids
 
 
 @click.group()
