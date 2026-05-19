@@ -130,9 +130,14 @@ def config_show():
 @main.command()
 @click.option(
     "--target",
-    required=True,
+    required=False,
     type=click.Path(exists=True),
     help="Target code directory",
+)
+@click.option(
+    "--targets-file",
+    type=click.Path(exists=True),
+    help="File with one target path per line",
 )
 @click.option(
     "--pipeline",
@@ -151,15 +156,20 @@ def config_show():
 @click.option("--verbose", is_flag=True, help="Verbose logging")
 @click.option("--no-snapshot", is_flag=True, help="Analyze target in-place (no copy)")
 def run(
-    target, pipeline, input_overrides, config_path, model, output, verbose, no_snapshot
+    target, targets_file, pipeline, input_overrides, config_path, model, output, verbose, no_snapshot
 ):
     """Run a penetration test pipeline."""
-    load_config(Path(config_path) if config_path else DEFAULT_CONFIG_PATH)  # noqa: F841
+    if not target and not targets_file:
+        raise click.UsageError("Either --target or --targets-file must be provided.")
+
+    cfg = load_config(Path(config_path) if config_path else DEFAULT_CONFIG_PATH)
+    if model:
+        cfg.llm.model = model
 
     pipeline_presets = {
         "full": ["per_file", "cross_file", "exploit", "report"],
         "analysis": ["per_file", "cross_file", "report"],
-        "exploit": ["exploit", "report"],
+        "exploit_only": ["exploit", "report"],
         "quick": ["per_file", "report"],
     }
 
@@ -168,16 +178,38 @@ def run(
     else:
         stages = [s.strip() for s in pipeline.split(",")]
 
+    targets = []
+    if target:
+        targets.append(target)
+    if targets_file:
+        targets_path = Path(targets_file)
+        for line in targets_path.read_text().splitlines():
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#"):
+                targets.append(stripped)
+
+    if not targets:
+        raise click.UsageError("No targets found.")
+
     overrides = {}
     for item in input_overrides:
         key, _, path = item.partition("=")
         overrides[key] = path
 
-    click.echo(f"Target: {target}")
-    click.echo(f"Pipeline: {' -> '.join(stages)}")
-    if overrides:
-        click.echo(f"Input overrides: {overrides}")
-    click.echo("Starting pipeline...")
+    workspace = Path(output) if output else Path.cwd()
+    workspace.mkdir(parents=True, exist_ok=True)
+
+    if verbose:
+        logging.basicConfig(level=logging.DEBUG)
+
+    asyncio.run(_execute_pipeline(
+        workspace=workspace,
+        config=cfg,
+        targets=targets,
+        stages=stages,
+        input_overrides=overrides,
+        verbose=verbose,
+    ))
 
 
 @main.command()
