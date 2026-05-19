@@ -6,11 +6,13 @@ from typing import Any
 
 from nano_strix.config.schema import AppConfig, PipelineConfig
 
+_AGENTS_DIR = Path(__file__).resolve().parent.parent / "agents"
+
 STAGE_SCRIPTS = {
-    "per_file": "src/nano_strix/agents/per_file.py",
-    "cross_file": "src/nano_strix/agents/cross_file.py",
-    "exploit": "src/nano_strix/agents/exploit.py",
-    "report": "src/nano_strix/agents/report.py",
+    "per_file": str(_AGENTS_DIR / "per_file.py"),
+    "cross_file": str(_AGENTS_DIR / "cross_file.py"),
+    "exploit": str(_AGENTS_DIR / "exploit.py"),
+    "report": str(_AGENTS_DIR / "report.py"),
 }
 
 
