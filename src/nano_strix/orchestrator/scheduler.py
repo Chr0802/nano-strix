@@ -64,6 +64,14 @@ class StageScheduler:
             task_ids.append(task_id)
         return task_ids
 
+    async def resume_task(self, task_id: str, target_path: str) -> None:
+        state = self._event_bus.get_state(task_id)
+        for stage in self._stages:
+            if stage not in state.stage_results:
+                self._remaining += 1
+                await self._queues[stage].put((task_id, target_path))
+                return
+
     async def run(self) -> None:
         self._all_done = asyncio.Event()
         if self._remaining == 0:

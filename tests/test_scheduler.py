@@ -267,3 +267,67 @@ async def test_scheduler_concurrency_limit(
     for tid in task_ids:
         state = event_bus.get_state(tid)
         assert state.status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_scheduler_resume_task_from_second_stage(
+    workspace: Path, event_bus: EventBus, tmp_path: Path
+):
+    _write_agent_script(tmp_path, "per_file")
+    _write_agent_script(tmp_path, "report")
+
+    from nano_strix.orchestrator.runner import STAGE_SCRIPTS
+
+    STAGE_SCRIPTS["per_file"] = str(tmp_path / "per_file_agent.py")
+    STAGE_SCRIPTS["report"] = str(tmp_path / "report_agent.py")
+
+    config = _make_config()
+    manager = AgentManager(workspace=workspace, config=config.ipc)
+    scheduler = StageScheduler(
+        workspace=workspace,
+        config=config,
+        agent_manager=manager,
+        event_bus=event_bus,
+    )
+
+    # Create a task and pre-populate per_file as completed
+    state = event_bus.create_task(["per_file", "report"])
+    task_id = state.task_id
+    state.complete_stage("per_file", {"findings": [], "status": "ok"})
+    event_bus.update_state(state)
+
+    # Resume should put task into report stage queue and run it
+    await scheduler.resume_task(task_id, "/target")
+    await scheduler.run()
+
+    final_state = event_bus.get_state(task_id)
+    assert final_state.status == "completed"
+    assert "per_file" in final_state.stage_results
+    assert "report" in final_state.stage_results
+
+
+@pytest.mark.asyncio
+async def test_scheduler_resume_task_already_completed(
+    workspace: Path, event_bus: EventBus, tmp_path: Path
+):
+    config = _make_config()
+    manager = AgentManager(workspace=workspace, config=config.ipc)
+    scheduler = StageScheduler(
+        workspace=workspace,
+        config=config,
+        agent_manager=manager,
+        event_bus=event_bus,
+    )
+
+    # Pre-populate a fully completed task
+    state = event_bus.create_task(["per_file", "report"])
+    task_id = state.task_id
+    state.complete_stage("per_file", {"findings": []})
+    state.complete_stage("report", {"report": ""})
+    state.status = "completed"
+    event_bus.update_state(state)
+
+    # resume_task should be a no-op (no remaining stages to enqueue)
+    await scheduler.resume_task(task_id, "/target")
+    # _remaining should still be 0 (wasn't incremented)
+    assert scheduler._remaining == 0
