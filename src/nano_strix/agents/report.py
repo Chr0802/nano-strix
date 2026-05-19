@@ -26,7 +26,7 @@ def main():
         "task_id": task_id,
         "payload": {
             "status": "ok",
-            "report": [],
+            "report": "",
             "stage": "report",
             "target": target,
         },
