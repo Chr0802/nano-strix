@@ -1,14 +1,14 @@
-"""strix-exploit agent: 模拟执行，便于 CLI 调试。"""
+"""strix-report agent: 模拟执行，便于 CLI 调试。"""
 
 import json
 import logging
 import sys
 import time
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [exploit] %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [report] %(message)s")
 logger = logging.getLogger(__name__)
 
-SLEEP_SECONDS = 5
+SLEEP_SECONDS = 1
 
 
 def main():
@@ -26,8 +26,8 @@ def main():
         "task_id": task_id,
         "payload": {
             "status": "ok",
-            "exploit_results": [],
-            "stage": "exploit",
+            "report": [],
+            "stage": "report",
             "target": target,
         },
     }
