@@ -11,7 +11,22 @@ from nano_strix.config.schema import (
     LoggingConfig,
     PipelineConfig,
     SandboxConfig,
+    SchedulerConfig,
+    StageConcurrency,
 )
+
+
+def _load_scheduler(data: dict) -> SchedulerConfig:
+    if not data:
+        return SchedulerConfig()
+    stages_raw = data.get("stages", {})
+    stages = {}
+    for name, values in stages_raw.items():
+        if isinstance(values, dict):
+            stages[name] = StageConcurrency(**values)
+        else:
+            stages[name] = values
+    return SchedulerConfig(stages=stages)
 
 
 def load_config(path: Path) -> AppConfig:
@@ -26,6 +41,7 @@ def load_config(path: Path) -> AppConfig:
     sandbox_data = data.get("sandbox", {})
     ipc_data = data.get("ipc", {})
     logging_data = data.get("logging", {})
+    scheduler_data = data.get("scheduler", {})
 
     return AppConfig(
         llm=LLMConfig(**llm_data) if llm_data else LLMConfig(),
@@ -33,4 +49,5 @@ def load_config(path: Path) -> AppConfig:
         sandbox=SandboxConfig(**sandbox_data) if sandbox_data else SandboxConfig(),
         ipc=IPCConfig(**ipc_data) if ipc_data else IPCConfig(),
         logging=LoggingConfig(**logging_data) if logging_data else LoggingConfig(),
+        scheduler=_load_scheduler(scheduler_data),
     )

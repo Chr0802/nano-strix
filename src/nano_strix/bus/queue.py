@@ -64,6 +64,7 @@ class EventBus:
                     "status": state.status,
                     "stage_results": state.stage_results,
                     "error": state.error,
+                    "retry_counts": state.retry_counts,
                 },
                 f,
                 ensure_ascii=False,
@@ -81,13 +82,17 @@ class EventBus:
             status=data["status"],
             stage_results=data.get("stage_results", {}),
             error=data.get("error"),
+            retry_counts=data.get("retry_counts", {}),
         )
 
     def get_pending_tasks(self) -> list[TaskState]:
+        return self.get_tasks_by_status("pending")
+
+    def get_tasks_by_status(self, status: str) -> list[TaskState]:
         tasks = []
         for task_dir in self._root.iterdir():
             if task_dir.is_dir() and (task_dir / "state.json").exists():
                 state = self.get_state(task_dir.name)
-                if state.status == "pending":
+                if state.status == status:
                     tasks.append(state)
         return tasks

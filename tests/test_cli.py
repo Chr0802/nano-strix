@@ -43,3 +43,10 @@ def test_cli_run_help():
     assert result.exit_code == 0
     assert "--target" in result.output
     assert "--pipeline" in result.output
+
+
+def test_cli_run_batch_help():
+    runner = CliRunner()
+    result = runner.invoke(main, ["run-batch", "--help"])
+    assert result.exit_code == 0
+    assert "TARGETS_FILE" in result.output

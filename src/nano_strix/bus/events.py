@@ -33,6 +33,7 @@ class TaskState:
     status: str  # pending / running / completed / failed
     stage_results: dict[str, Any] = field(default_factory=dict)
     error: str | None = None
+    retry_counts: dict[str, int] = field(default_factory=dict)
 
     @property
     def is_complete(self) -> bool:

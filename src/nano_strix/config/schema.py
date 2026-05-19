@@ -4,6 +4,24 @@ from dataclasses import dataclass, field
 
 
 @dataclass
+class StageConcurrency:
+    max_concurrent: int = 1
+    max_retries: int = 2
+
+
+@dataclass
+class SchedulerConfig:
+    stages: dict[str, StageConcurrency] = field(
+        default_factory=lambda: {
+            "per_file": StageConcurrency(max_concurrent=2, max_retries=2),
+            "cross_file": StageConcurrency(max_concurrent=1, max_retries=2),
+            "exploit": StageConcurrency(max_concurrent=1, max_retries=2),
+            "report": StageConcurrency(max_concurrent=1, max_retries=0),
+        }
+    )
+
+
+@dataclass
 class LLMConfig:
     provider: str = "anthropic"
     api_key: str = ""
@@ -52,3 +70,4 @@ class AppConfig:
     sandbox: SandboxConfig = field(default_factory=SandboxConfig)
     ipc: IPCConfig = field(default_factory=IPCConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
+    scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
