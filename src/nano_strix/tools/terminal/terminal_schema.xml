@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<tools>
+  <tool name="terminal_execute">
+    <description>Execute a shell command and return stdout, stderr, and exit code.</description>
+    <parameters>
+      <parameter name="command" type="string" required="true">
+        <description>The shell command to execute.</description>
+      </parameter>
+      <parameter name="timeout" type="integer" required="false">
+        <description>Timeout in seconds (default: 30).</description>
+      </parameter>
+    </parameters>
+  </tool>
+</tools>

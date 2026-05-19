@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<tools>
+  <tool name="nmap_scan">
+    <description>Run an nmap network scan on a target.</description>
+    <parameters>
+      <parameter name="target" type="string" required="true">
+        <description>Target host or IP address to scan.</description>
+      </parameter>
+      <parameter name="ports" type="string" required="false">
+        <description>Port range to scan (e.g. '1-1000', '80,443', default: top ports).</description>
+      </parameter>
+      <parameter name="flags" type="string" required="false">
+        <description>Additional nmap flags (e.g. '-sV -O').</description>
+      </parameter>
+    </parameters>
+  </tool>
+  <tool name="nikto_scan">
+    <description>Run a Nikto web vulnerability scan on a target.</description>
+    <parameters>
+      <parameter name="target" type="string" required="true">
+        <description>Target URL or host to scan (e.g. 'http://example.com').</description>
+      </parameter>
+      <parameter name="flags" type="string" required="false">
+        <description>Additional nikto flags.</description>
+      </parameter>
+    </parameters>
+  </tool>
+  <tool name="sqlmap_scan">
+    <description>Run sqlmap for SQL injection testing on a target URL.</description>
+    <parameters>
+      <parameter name="target" type="string" required="true">
+        <description>Target URL with parameters (e.g. 'http://example.com/page?id=1').</description>
+      </parameter>
+      <parameter name="flags" type="string" required="false">
+        <description>Additional sqlmap flags (e.g. '--batch --level=3').</description>
+      </parameter>
+    </parameters>
+  </tool>
+</tools>
