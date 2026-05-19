@@ -78,27 +78,53 @@ resume TASK_ID [--config PATH] [--output DIR]
 
 从 CLI 移除。报告生成由 `agents/report.py` 作为 pipeline stage 负责。
 
-### 6. `agents/report.py` (新增)
+### 6. Agent 脚本改造（per_file / cross_file / exploit / report）
 
-与其他三个 agent 保持一致的 stub 模式：
+当前四个 agent 均为"立即返回 error"的 stub，不利于 CLI 调试。本次改为**模拟执行**：sleep + 打印日志，模拟真实 agent 的工作耗时和输出。
+
+统一的模拟模式：
 
 ```python
-"""strix-report agent: 报告生成。尚未实现。"""
-import json, sys
+"""strix-{stage} agent: 模拟执行，便于 CLI 调试。"""
+import json
+import sys
+import time
+import logging
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [{stage}] %(message)s")
+logger = logging.getLogger(__name__)
+
+SLEEP_SECONDS = 3  # 模拟执行耗时
 
 def main():
     line = sys.stdin.readline()
     msg = json.loads(line)
+    task_id = msg["task_id"]
+    target = msg.get("payload", {}).get("target", "unknown")
+
+    logger.info("Task %s: start processing %s", task_id, target)
+    time.sleep(SLEEP_SECONDS)
+    logger.info("Task %s: done", task_id)
+
     result = {
         "type": "result",
-        "task_id": msg["task_id"],
-        "payload": {"error": "report agent 尚未实现"},
+        "task_id": task_id,
+        "payload": {
+            "status": "ok",
+            "findings": [],
+            "stage": "{stage}",
+            "target": target,
+        },
     }
     print(json.dumps(result))
 
 if __name__ == "__main__":
     main()
 ```
+
+各 agent 的 SLEEP_SECONDS 可不同（如 per_file=2s, cross_file=4s, exploit=5s, report=1s），以便观察不同 stage 的耗时差异。
+
+**涉及文件：** `agents/per_file.py`, `agents/cross_file.py`, `agents/exploit.py`, `agents/report.py`（新建）
 
 ### 7. `orchestrator/runner.py` — STAGE_SCRIPTS 更新
 
