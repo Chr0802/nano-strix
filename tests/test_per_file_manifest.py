@@ -190,18 +190,20 @@ class TestCanFinish:
         assert len(manifest.hard_gate["blocked_by"]) > 0
 
 
-class TestMarkAnalyzing:
-    def test_sets_status_and_timestamp(self, empty_manifest_path, sample_files):
+class TestClaimAtomicReservation:
+    def test_claim_pending_file_atomically_reserves(self, empty_manifest_path, sample_files):
         from nano_strix.agents.per_file_lib.manifest import FileManifest
 
         manifest = FileManifest.create(empty_manifest_path, sample_files,
                                        ["route_agent"])
-        manifest.mark_analyzing("src/auth/login.py", "route_agent")
+        claimed = manifest.claim_pending_file("route_agent")
 
-        f = manifest.files["src/auth/login.py"]
-        assert f.status == "analyzing"
-        assert f.assigned_to == "route_agent"
-        assert f.analyzing_started_at is not None
+        assert claimed is not None
+        assert claimed.status == "analyzing"
+        assert claimed.assigned_to == "route_agent"
+        assert claimed.analyzing_started_at is not None
+        assert claimed.retry_count == 0
+        assert manifest.agents_state["route_agent"]["current_file"] == "src/auth/login.py"
 
 
 class TestAgentError:
@@ -210,7 +212,7 @@ class TestAgentError:
 
         manifest = FileManifest.create(empty_manifest_path, sample_files,
                                        ["route_agent"])
-        manifest.mark_analyzing("src/auth/login.py", "route_agent")
+        manifest.claim_pending_file("route_agent")
         manifest.handle_agent_error("src/auth/login.py", "route_agent")
 
         f = manifest.files["src/auth/login.py"]
@@ -224,7 +226,7 @@ class TestAgentError:
         manifest = FileManifest.create(empty_manifest_path, sample_files,
                                        ["route_agent"], max_file_retries=1)
         manifest.files["src/auth/login.py"].retry_count = 1
-        manifest.mark_analyzing("src/auth/login.py", "route_agent")
+        manifest.claim_pending_file("route_agent")
         manifest.handle_agent_error("src/auth/login.py", "route_agent")
 
         f = manifest.files["src/auth/login.py"]
@@ -254,7 +256,7 @@ class TestAgentState:
 
         manifest = FileManifest.create(empty_manifest_path, sample_files,
                                        ["route_agent"])
-        manifest.mark_analyzing("src/auth/login.py", "route_agent")
+        manifest.claim_pending_file("route_agent")
         # Simulate old timestamp
         old_time = datetime.now(timezone.utc) - timedelta(seconds=9999)
         manifest.files["src/auth/login.py"].analyzing_started_at = old_time.isoformat()

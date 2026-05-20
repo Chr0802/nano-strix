@@ -24,6 +24,7 @@ class ManifestFile:
     skip_votes: dict[str, str | None] = field(default_factory=dict)
     skip_reason: str = ""
     findings: list[dict[str, Any]] = field(default_factory=list)
+    _path: str = field(default="", repr=False)
 
     @property
     def path(self) -> str:
@@ -116,8 +117,8 @@ class FileManifest:
                 priority=meta["priority"],
                 dimensions=meta.get("dimensions", []),
                 skip_votes={name: None for name in agent_names},
+                _path=file_path,
             )
-            mf._path = file_path
             manifest_files[file_path] = mf
 
         m = cls(
@@ -179,14 +180,16 @@ class FileManifest:
         self._path.write_text(json.dumps(data, indent=2, ensure_ascii=False))
 
     def claim_pending_file(self, agent_name: str) -> ManifestFile | None:
-        """Select next file for agent. Returns None when all files voted."""
+        """Atomically select and reserve next file for agent. Returns None when all files voted."""
         my_dimension = AGENT_DIMENSIONS.get(agent_name)
-        candidates = []
         with self._lock:
+            candidates = []
             for path, f in self._files.items():
                 vote = f.skip_votes.get(agent_name)
                 if vote is not None:
                     continue  # already voted
+                if f.status in ("analyzed", "skipped"):
+                    continue  # already finalized
                 if f.status == "analyzing" and f.assigned_to is not None:
                     continue  # another agent is working on it
                 if f.retry_count > self.max_file_retries:
@@ -203,17 +206,16 @@ class FileManifest:
                 return (-dim_match, prio, _path)
 
             candidates.sort(key=sort_key)
-            return candidates[0][1]
+            best_path, best_file = candidates[0]
 
-    def mark_analyzing(self, file_path: str, agent_name: str) -> None:
-        with self._lock:
-            f = self._files[file_path]
-            f.status = "analyzing"
-            f.assigned_to = agent_name
-            f.analyzing_started_at = _now_iso()
-            f.retry_count += 1
-            self.agents_state[agent_name]["current_file"] = file_path
+            # Atomically reserve the file within the lock
+            best_file.status = "analyzing"
+            best_file.assigned_to = agent_name
+            best_file.analyzing_started_at = _now_iso()
+            self.agents_state[agent_name]["current_file"] = best_path
             self._write()
+
+            return best_file
 
     def update_file(
         self, file_path: str, *, findings: list[dict[str, Any]] | None = None,
@@ -250,6 +252,7 @@ class FileManifest:
     def handle_agent_error(self, file_path: str, agent_name: str) -> None:
         with self._lock:
             f = self._files[file_path]
+            f.retry_count += 1
             if f.retry_count > self.max_file_retries:
                 f.status = "skipped"
                 f.skip_reason = (f.skip_reason + f"; {agent_name}: max retries exceeded").strip("; ")
