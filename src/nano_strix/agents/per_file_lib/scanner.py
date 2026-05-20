@@ -59,9 +59,26 @@ async def run_static_scans(
                 process.communicate(), timeout=300
             )
 
-            if process.returncode != 0 and scanner_name == "semgrep":
-                # semgrep returns non-zero when findings exist -- that's expected
-                pass
+            if process.returncode != 0:
+                if scanner_name == "semgrep":
+                    if process.returncode == 1:
+                        # semgrep returns 1 when findings exist -- that's expected
+                        pass
+                    else:
+                        logger.warning(
+                            "%s exited with code %d (stderr: %s)",
+                            scanner_name,
+                            process.returncode,
+                            stderr.decode(errors="replace").strip() or "(empty)",
+                        )
+                elif scanner_name == "bandit":
+                    if process.returncode >= 2:
+                        logger.warning(
+                            "%s exited with code %d (stderr: %s)",
+                            scanner_name,
+                            process.returncode,
+                            stderr.decode(errors="replace").strip() or "(empty)",
+                        )
 
             output = stdout.decode(errors="replace").strip()
             if not output:
@@ -72,7 +89,10 @@ async def run_static_scans(
 
         except asyncio.TimeoutError:
             logger.warning("%s timed out after 300s", scanner_name)
-            process.kill()
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
             await process.wait()
         except Exception:
             logger.exception("Error running %s", scanner_name)
@@ -118,6 +138,12 @@ def _parse_and_apply_findings(
             }
             if rel_path in manifest.files:
                 manifest.files[rel_path].scan_findings.append(finding)
+            else:
+                logger.debug(
+                    "%s finding for '%s' skipped: file not in manifest",
+                    scanner_name,
+                    rel_path,
+                )
 
     elif scanner_name == "bandit":
         results = data.get("results", [])
@@ -138,5 +164,11 @@ def _parse_and_apply_findings(
             }
             if rel_path in manifest.files:
                 manifest.files[rel_path].scan_findings.append(finding)
+            else:
+                logger.debug(
+                    "%s finding for '%s' skipped: file not in manifest",
+                    scanner_name,
+                    rel_path,
+                )
 
     manifest.save()
