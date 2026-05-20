@@ -62,3 +62,26 @@ def test_logging_config():
     cfg = LoggingConfig(level="debug")
     assert cfg.level == "debug"
     assert cfg.categories == {}
+
+
+def test_per_file_config_defaults():
+    from nano_strix.config.schema import PerFileConfig, PerFileAgentConfig
+
+    cfg = PerFileConfig()
+    assert cfg.classification_model == "claude-haiku-4-5-20251001"
+    assert cfg.analysis_model == "claude-sonnet-4-6"
+    assert cfg.max_concurrent == 4
+    assert cfg.max_file_retries == 3
+    assert cfg.orphan_timeout_seconds == 600
+    assert cfg.max_agent_restarts == 3
+    assert len(cfg.agents) == 4
+    assert cfg.agents["route_agent"].enabled is True
+    assert cfg.agents["route_agent"].max_iterations == 300
+
+
+def test_per_file_config_nested_in_app_config():
+    from nano_strix.config.schema import AppConfig
+
+    cfg = AppConfig()
+    assert cfg.per_file is not None
+    assert cfg.per_file.classification_model == "claude-haiku-4-5-20251001"

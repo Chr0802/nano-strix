@@ -22,6 +22,37 @@ class SchedulerConfig:
 
 
 @dataclass
+class PerFileAgentConfig:
+    enabled: bool = True
+    max_iterations: int = 300
+
+
+@dataclass
+class PerFileConfig:
+    agents: dict[str, PerFileAgentConfig] = field(
+        default_factory=lambda: {
+            "route_agent": PerFileAgentConfig(),
+            "dataflow_agent": PerFileAgentConfig(),
+            "auth_agent": PerFileAgentConfig(),
+            "dependency_agent": PerFileAgentConfig(),
+        }
+    )
+    classification_model: str = "claude-haiku-4-5-20251001"
+    analysis_model: str = "claude-sonnet-4-6"
+    max_concurrent: int = 4
+    max_tokens: int = 4096
+    temperature: float = 0.1
+    phase3_timeout_seconds: int = 1800
+    per_file_timeout_seconds: int = 3600
+    max_file_retries: int = 3
+    orphan_timeout_seconds: int = 600
+    max_agent_restarts: int = 3
+    manifest_sync_interval_seconds: int = 5
+    health_check_interval_seconds: int = 30
+    static_scanners: list[str] = field(default_factory=lambda: ["semgrep", "bandit"])
+
+
+@dataclass
 class LLMConfig:
     provider: str = "anthropic"
     api_key: str = ""
@@ -71,3 +102,4 @@ class AppConfig:
     ipc: IPCConfig = field(default_factory=IPCConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
+    per_file: PerFileConfig = field(default_factory=PerFileConfig)
