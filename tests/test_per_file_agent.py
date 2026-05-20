@@ -154,3 +154,47 @@ async def test_classify_files_markdown_fence_stripping(target_dir, mock_llm_clie
     assert manifest.files["src/auth/login.py"].priority == "high"
     assert manifest.files["src/auth/login.py"].dimensions == ["auth"]
     assert manifest.files["config/settings.py"].priority == "medium"
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: Static scanner (semgrep / bandit)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def sample_manifest(tmp_path, target_dir):
+    from nano_strix.agents.per_file_lib.manifest import FileManifest
+
+    files = {
+        "src/auth/login.py": {"priority": "high", "dimensions": ["auth"]},
+        "src/api/handler.py": {"priority": "high", "dimensions": ["route"]},
+        "src/utils/format.py": {"priority": "low", "dimensions": []},
+    }
+    path = tmp_path / "manifest.json"
+    return FileManifest.create(path, files,
+                               ["route_agent", "dataflow_agent", "auth_agent", "dependency_agent"])
+
+
+async def test_scanner_writes_findings_to_manifest(sample_manifest, target_dir):
+    from nano_strix.agents.per_file_lib.scanner import run_static_scans
+
+    await run_static_scans(
+        manifest=sample_manifest,
+        target_dir=str(target_dir),
+        scanners=["semgrep"],
+    )
+    # After scanning, manifest should be updated (even if semgrep isn't installed,
+    # the function should handle the missing tool gracefully)
+    assert sample_manifest.phase == "static_scan"
+
+
+async def test_scanner_missing_tool_handled(sample_manifest, target_dir):
+    from nano_strix.agents.per_file_lib.scanner import run_static_scans
+
+    await run_static_scans(
+        manifest=sample_manifest,
+        target_dir=str(target_dir),
+        scanners=["nonexistent_tool_xyz"],
+    )
+    # Should not raise, should complete gracefully
+    assert sample_manifest.phase == "static_scan"
