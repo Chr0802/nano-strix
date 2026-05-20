@@ -30,18 +30,15 @@ class StageScheduler:
         self._event_bus = event_bus
         self._stages = config.pipeline.stages
 
-        self._semaphores: dict[str, asyncio.Semaphore] = {}
         self._queues: dict[str, asyncio.Queue] = {}
         self._stage_configs = config.scheduler.stages
 
         for stage in self._stages:
-            concurrency = self._stage_configs.get(stage)
-            max_c = concurrency.max_concurrent if concurrency else 1
-            self._semaphores[stage] = asyncio.Semaphore(max_c)
             self._queues[stage] = asyncio.Queue()
 
         self._remaining = 0
         self._all_done: asyncio.Event | None = None
+        self._shutdown = False
 
     async def submit_task(self, target_path: str) -> str:
         state = self._event_bus.create_task(self._stages)
@@ -79,33 +76,39 @@ class StageScheduler:
 
     async def run(self) -> None:
         self._all_done = asyncio.Event()
+        self._shutdown = False
         if self._remaining == 0:
             return
 
         workers = []
         for i, stage in enumerate(self._stages):
             next_stage = self._stages[i + 1] if i + 1 < len(self._stages) else None
-            workers.append(
-                asyncio.create_task(self._run_stage_worker(stage, next_stage))
-            )
+            concurrency = self._stage_configs.get(stage)
+            max_c = concurrency.max_concurrent if concurrency else 1
+            for _ in range(max_c):
+                workers.append(
+                    asyncio.create_task(self._run_stage_worker(stage, next_stage))
+                )
         await asyncio.gather(*workers)
 
-    def _mark_done(self, next_stage: str | None) -> None:
+    def _mark_done(self) -> None:
         self._remaining -= 1
-        if self._remaining <= 0 and next_stage is not None:
-            self._queues[next_stage].put_nowait(_SENTINEL)
-        if self._remaining <= 0 and self._all_done is not None:
-            self._all_done.set()
+        if self._remaining <= 0 and not self._shutdown:
+            self._shutdown = True
+            for stage in self._stages:
+                concurrency = self._stage_configs.get(stage)
+                n = concurrency.max_concurrent if concurrency else 1
+                for _ in range(n):
+                    self._queues[stage].put_nowait(_SENTINEL)
+            if self._all_done is not None:
+                self._all_done.set()
 
     async def _run_stage_worker(self, stage: str, next_stage: str | None) -> None:
         queue = self._queues[stage]
-        semaphore = self._semaphores[stage]
 
         while True:
             if queue.empty():
                 if self._remaining <= 0:
-                    if next_stage is not None:
-                        await self._queues[next_stage].put(_SENTINEL)
                     break
                 await asyncio.sleep(0.01)
                 continue
@@ -113,42 +116,36 @@ class StageScheduler:
             item = await queue.get()
             if item is _SENTINEL:
                 queue.task_done()
-                if next_stage is not None:
-                    await self._queues[next_stage].put(_SENTINEL)
                 break
 
             task_id, target_path = item
             queue.task_done()
 
-            await semaphore.acquire()
-            try:
-                state = self._event_bus.get_state(task_id)
-                if state.status == "failed":
-                    self._mark_done(next_stage)
-                    continue
+            state = self._event_bus.get_state(task_id)
+            if state.status == "failed":
+                self._mark_done()
+                continue
 
-                await self._execute_stage(state, stage, target_path)
+            await self._execute_stage(state, stage, target_path)
 
-                state = self._event_bus.get_state(task_id)
-                if state.status == "failed":
-                    self._mark_done(next_stage)
-                    continue
+            state = self._event_bus.get_state(task_id)
+            if state.status == "failed":
+                self._mark_done()
+                continue
 
-                if next_stage is not None:
-                    await self._queues[next_stage].put((task_id, target_path))
-                else:
-                    state.status = "completed"
-                    self._event_bus.update_state(state)
-                    self._event_bus.publish(
-                        TaskEvent(
-                            task_id=task_id,
-                            event_type="task_completed",
-                            stage=None,
-                        )
+            if next_stage is not None:
+                await self._queues[next_stage].put((task_id, target_path))
+            else:
+                state.status = "completed"
+                self._event_bus.update_state(state)
+                self._event_bus.publish(
+                    TaskEvent(
+                        task_id=task_id,
+                        event_type="task_completed",
+                        stage=None,
                     )
-                    self._mark_done(None)
-            finally:
-                semaphore.release()
+                )
+                self._mark_done()
 
     async def _execute_stage(
         self, state: TaskState, stage: str, target_path: str

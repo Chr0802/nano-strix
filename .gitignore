@@ -42,3 +42,4 @@ wheels/
 .installed.cfg
 *.egg
 refer_code/
+docs/
