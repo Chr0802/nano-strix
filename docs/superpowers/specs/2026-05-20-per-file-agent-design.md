@@ -17,8 +17,8 @@ per_file agent 保持独立脚本模式，由 AgentManager 作为子进程启动
   - high: auth/login/db/api/route/输入处理/命令执行
   - medium: 业务逻辑、中间件、模型定义
   - low: config/util/static/test/fixtures
-- LLM 同时为每个文件标注相关维度标签（route/dataflow/auth/dependency），用于 Phase 3 分配子 agent
-- 输出: file_manifest.json（写入 task workspace）
+- LLM 同时为每个文件标注相关维度标签（route/dataflow/auth/dependency），用于 Phase 3 子 agent 判断各自的处理范围
+- 输出: file_manifest.json（写入 task workspace），phase = "classification"
 
 ### Phase 2: 批量静态扫描
 
@@ -26,6 +26,7 @@ per_file agent 保持独立脚本模式，由 AgentManager 作为子进程启动
 - 结果写入 manifest 的 `scan_findings` 字段
 - 每个文件携带其静态扫描发现的候选漏洞列表
 - 此阶段不经过 LLM，纯工具执行
+- 完成后 manifest.phase = "static_scan"
 
 ### Phase 3: 多子 Agent 并行分析
 
@@ -34,25 +35,29 @@ per_file agent 保持独立脚本模式，由 AgentManager 作为子进程启动
 - 共享 LLM 限流器（threading.Semaphore）
 - daemon thread，主线程 join 等待全部完成
 - 终止条件：`can_finish()` 硬门禁检查通过
+- manifest.phase = "analysis"
 
 ## 2. 子 Agent 定义
 
 ### Route Agent
 - 发现所有 HTTP/API 入口点（Flask routes、FastAPI endpoints、Express routers 等）
-- 从 manifest 中筛选 route 相关文件
-- 贡献: 路由发现结果写入 manifest，供 Dataflow Agent 使用
+- 从 manifest 中筛选维度标签含 `"route"` 的文件
+- 将发现的路由写入 `discovered_routes`，供 Dataflow Agent 使用
 
 ### Dataflow Agent
 - 追踪用户输入从 source 到 sink 的完整路径
-- 依赖 Route Agent 发现的路由信息
+- 从 manifest 中筛选维度标签含 `"dataflow"` 的文件
+- 读取 `discovered_routes` 作为追踪起点线索
 - 关注: SQL 查询、命令执行、文件读写、反序列化等危险操作
 
 ### Auth Agent
 - 分析认证机制、会话管理、鉴权逻辑
+- 从 manifest 中筛选维度标签含 `"auth"` 的文件
 - 关注: JWT 验证、session 处理、密码哈希、权限检查中间件
 
 ### Dependency Agent
 - 分析第三方依赖中的已知漏洞
+- 从 manifest 中筛选维度标签含 `"dependency"` 的文件
 - 检查 requirements.txt、package.json、pom.xml 等依赖声明
 - 与 CVE 数据库交叉引用
 
@@ -68,17 +73,63 @@ per_file agent 保持独立脚本模式，由 AgentManager 作为子进程启动
 
 ## 3. file_manifest.json
 
+manifest 是 per_file agent 的核心共享状态，同时承载"文件覆盖追踪"和"子 agent 断点"两层职责。
+
 ### 数据结构
 
 ```python
 {
     "phase": "analysis",               # classification | static_scan | analysis
+
+    # ══════════ 子 Agent 维度的断点状态 ══════════
+    "agents_state": {
+        "route_agent": {
+            "status": "running",        # running | completed | crashed | restarted
+            "thread_id": 140234567890,  # 当前线程 ID，崩溃后比对检测
+            "restart_count": 0,         # 已重启次数
+            "current_file": "src/api/handler.py",  # 当前分析文件，崩溃后定位孤儿
+            "iteration": 42,            # 当前迭代轮次，恢复后从此值继续
+            "files_analyzed": 15,
+            "files_skipped": 30,
+            "last_health_check": "2026-05-20T10:30:15Z"
+        },
+        "dataflow_agent": {
+            "status": "running",
+            "thread_id": 140234567891,
+            "restart_count": 0,
+            "current_file": "src/db/query.py",
+            "iteration": 38,
+            "files_analyzed": 12,
+            "files_skipped": 28,
+            "last_health_check": "2026-05-20T10:30:15Z"
+        },
+        "auth_agent": {
+            "status": "crashed",
+            "thread_id": null,
+            "restart_count": 1,
+            "current_file": null,
+            "iteration": 25,
+            "files_analyzed": 8,
+            "files_skipped": 36,
+            "last_health_check": "2026-05-20T10:25:00Z",
+            "crash_reason": "LLM API connection reset"
+        },
+        "dependency_agent": {...}
+    },
+
+    # ══════════ 共享数据：路由发现结果 ══════════
+    "discovered_routes": [              # Route Agent 写入，Dataflow Agent 消费
+        {"path": "/api/login", "method": "POST", "file": "src/auth/login.py", "line": 42},
+        {"path": "/api/users",  "method": "GET",  "file": "src/api/users.py",  "line": 15}
+    ],
+
+    # ══════════ 文件维度的协作状态 ══════════
     "files": {
         "src/auth/login.py": {
             "priority": "high",
             "status": "analyzed",           # pending | analyzing | analyzed | skipped
             "assigned_to": "auth_agent",
-            "dimensions": ["auth", "dataflow"],
+            "dimensions": ["auth", "dataflow", "route"],
             "retry_count": 0,
             "analyzing_started_at": "2026-05-20T10:30:15Z",
             "scan_findings": [
@@ -109,6 +160,7 @@ per_file agent 保持独立脚本模式，由 AgentManager 作为子进程启动
             "priority": "low",
             "status": "skipped",
             "assigned_to": null,
+            "dimensions": [],
             "retry_count": 0,
             "analyzing_started_at": null,
             "scan_findings": [],
@@ -122,11 +174,13 @@ per_file agent 保持独立脚本模式，由 AgentManager 作为子进程启动
             "findings": []
         }
     },
+
+    # ══════════ 汇总统计 ══════════
     "coverage": {
         "total": 200,
-        "high": {"total": 15, "analyzed": 12, "skipped": 0, "pending": 3},
+        "high":   {"total": 15, "analyzed": 12, "skipped": 0,  "pending": 3},
         "medium": {"total": 45, "analyzed": 20, "skipped": 10, "pending": 15},
-        "low": {"total": 140, "analyzed": 5, "skipped": 80, "pending": 55}
+        "low":    {"total": 140,"analyzed": 5,  "skipped": 80, "pending": 55}
     },
     "hard_gate": {
         "can_finish": false,
@@ -138,22 +192,63 @@ per_file agent 保持独立脚本模式，由 AgentManager 作为子进程启动
 }
 ```
 
+### agents_state 各字段说明
+
+| 字段 | 用途 |
+|------|------|
+| `status` | `running` / `completed` / `crashed` / `restarted` |
+| `thread_id` | 当前 OS 线程 ID，主线程巡检时比对，不匹配则判定崩溃 |
+| `restart_count` | 重启次数，超过 `max_agent_restarts` 不再重启 |
+| `current_file` | 当前正在分析的文件路径，崩溃后用于定位孤儿文件 |
+| `iteration` | 当前迭代轮次，崩溃恢复后新 agent 从此值继续计数 |
+| `files_analyzed` / `files_skipped` | 进度统计 |
+| `last_health_check` | 最近一次健康心跳时间戳，巡检程序据此判定假死 |
+
+### 断点恢复流程（使用 agents_state）
+
+```
+主线程发现 route_agent 线程终止
+       │
+       ▼
+读取 agents_state["route_agent"]
+       │
+       ├── status = "running" 但 thread 已死 → 确认崩溃
+       ├── current_file = "src/api/handler.py" → 定位孤儿
+       ├── restart_count = 0 → 未超 max_agent_restarts，可以重启
+       │
+       ▼
+清理孤儿文件:
+  files["src/api/handler.py"] → status = "pending", assigned_to = null, retry_count += 1
+  所有 assigned_to = "route_agent" 且 status != "analyzed" → assigned_to = null
+       │
+       ▼
+更新 agents_state["route_agent"]:
+  status = "restarted"
+  restart_count = 1
+  current_file = null
+  thread_id = <新线程 ID>
+  iteration = 42  (保留原计数继续)
+       │
+       ▼
+创建新线程 → 新 route_agent 从 manifest 取 pending 文件开始工作
+```
+
 ### 状态流转
 
 ```
- pending ──────────────────────────────────────────────────────────────┐
-    │                                                                  │
-    │  任一 agent 投 "analyze"                                           │
-    ▼                                                                  │
- analyzing ──→ agent 完成分析 ──→ analyzed                               │
-    │         retry_count += 1                                          │
-    │         (崩溃/超时)                                                 │
-    │         ├── retry_count <= max_file_retries → 回退 pending          │
-    │         └── retry_count > max_file_retries → 强制 skipped           │
-    │                                                                  │
-    │  所有 agent 已投票 且 全部投 skip                                    │
-    ▼                                                                  │
- skipped ◄─────────────────────────────────────────────────────────────┘
+ pending ─────────────────────────────────────────────────────────────┐
+    │                                                                 │
+    │  任一 agent 投 "analyze"                                          │
+    ▼                                                                 │
+ analyzing ──→ agent 完成分析 ──→ analyzed                              │
+    │         retry_count += 1                                         │
+    │         (崩溃/超时)                                                │
+    │         ├── retry_count <= max_file_retries → 回退 pending         │
+    │         └── retry_count > max_file_retries → 强制 skipped          │
+    │                                                                 │
+    │  所有 agent 已投票 且 全部投 skip                                   │
+    ▼                                                                 │
+ skipped ◄────────────────────────────────────────────────────────────┘
 
 can_finish = True 条件：
   1. 所有 high 文件 status ∈ {analyzed, skipped}
@@ -168,16 +263,130 @@ can_finish = True 条件：
 - `threading.Lock` 保护 manifest 读写
 - 每个子 agent 读写 manifest 时持有锁，操作完后释放
 - `assigned_to` 字段防止两个 agent 同时分析同一文件
-- 子 agent 先标记 `assigned_to` + status → `analyzing` + `analyzing_started_at` 时间戳，然后释放锁，分析完成后再次获取锁写入 findings
-- 主线程巡检程序定时读取 manifest，检测孤儿文件（详见 7.2）
+- 子 agent 先标记 `assigned_to` + status → `analyzing` + `analyzing_started_at` + 更新 `agents_state.current_file`，然后释放锁。分析完成后再次获取锁写入 findings + 更新 `agents_state`
+- 主线程巡检程序定时读取 manifest，检测孤儿文件和假死 agent（详见 7.2）
 
 ### Manifest 持久化
 
 - manifest 变更后即时写入 task workspace 的 `file_manifest.json`
-- 进程崩溃重启后从文件恢复完整状态
+- 进程崩溃重启后从文件恢复完整状态（包括 agents_state）
 - `phase` 字段指示当前阶段，重启后跳过已完成阶段
 
-## 4. LLM 集成
+## 4. 子 Agent 文件选择策略
+
+核心问题：每个子 agent 有特定的分析维度，必须能判断"哪些文件该我来分析、先处理哪个、哪些不归我管"。
+
+### 4.1 维度匹配
+
+Phase 1 分类时 LLM 为每个文件标注 `dimensions` 列表。子 agent 根据自己的维度过滤：
+
+| 子 Agent | 关注维度 | 匹配条件 |
+|----------|---------|---------|
+| route_agent | `"route"` | 文件包含 HTTP 路由、API 端点定义 |
+| dataflow_agent | `"dataflow"` | 文件包含用户输入处理、数据库操作、命令执行 |
+| auth_agent | `"auth"` | 文件包含认证、鉴权、会话管理 |
+| dependency_agent | `"dependency"` | 依赖声明文件 或 import 第三方库的文件 |
+
+### 4.2 claim_pending_file 选择逻辑
+
+```python
+def claim_pending_file(agent_name, manifest):
+    """
+    子 agent 选择下一个要分析的文件。
+    返回 None 表示该 agent 所有文件均已投票。
+    """
+    my_dimension = AGENT_DIMENSIONS[agent_name]  # e.g., "auth"
+
+    # Step 1: 候选过滤 — pending 且该 agent 尚未投票且未被占用
+    candidates = []
+    for path, f in manifest.files.items():
+        if agent_name in f["skip_votes"] and f["skip_votes"][agent_name] is not None:
+            continue  # 已投票
+        if f["status"] == "analyzing" and f["assigned_to"] is not None:
+            continue  # 其他 agent 正在分析
+        if f["retry_count"] > manifest.max_file_retries:
+            continue  # 超过重试上限
+        candidates.append((path, f))
+
+    if not candidates:
+        return None  # 所有文件都已投票
+
+    # Step 2: 排序 — 维度匹配优先 > 风险等级 > 路径字母序
+    def sort_key(item):
+        path, f = item
+        dimension_match = 1 if my_dimension in f["dimensions"] else 0
+        priority_order = {"high": 0, "medium": 1, "low": 2}
+        return (-dimension_match, priority_order.get(f["priority"], 2), path)
+
+    candidates.sort(key=sort_key)
+    return candidates[0]
+```
+
+### 4.3 排序优先级
+
+```
+第1优先级: 维度匹配（匹配本 agent 维度的文件优先）
+第2优先级: 风险等级（high → medium → low）
+第3优先级: 文件路径（字母序，保证确定性）
+
+示例 — auth_agent 的选择顺序：
+  src/auth/login.py      (dim=match, priority=high)   ← 先分析
+  src/auth/middleware.py  (dim=match, priority=high)
+  src/api/admin.py       (dim=match, priority=medium)
+  src/db/user.py         (dim=no match, priority=high) ← 维度不匹配，投 skip
+  src/utils/format.py    (dim=no match, priority=low)  ← 维度不匹配，投 skip
+```
+
+### 4.4 不匹配文件的处理
+
+当 agent 拿到一个不匹配自己维度的文件时：
+
+1. **不分析内容** — 不属于它的专业领域
+2. **投 skip 票** — 附带 `skip_reason`（如 "dataflow_agent: no user input or dangerous sink"）
+3. **快速释放** — 不消耗 LLM 调用，直接写 manifest
+
+### 4.5 子 Agent 间数据依赖
+
+Route Agent 和 Dataflow Agent 存在轻量依赖：Dataflow 知道路由入口点后能更精准追踪数据流。但不阻塞并行：
+
+```
+Route Agent                          Dataflow Agent
+    │                                    │
+    │ 分析 src/api/login.py               │ claim_pending_file()
+    │ 发现路由: POST /api/login (L42)      │ 拿到 src/db/query.py
+    │                                    │
+    │ 写入 discovered_routes              │ 读文件 + LLM 分析（独立发现 source）
+    │                                    │ 同时读取 discovered_routes 作为提示
+    │                                    │
+    ▼                                    ▼
+  下一文件                             下一文件
+```
+
+- Route Agent 发现的每条路由写入 `discovered_routes`
+- Dataflow Agent 每轮开始前读取 `discovered_routes`，作为追踪数据流的起点线索
+- Dataflow Agent 也可通过 LLM 阅读代码独立发现 source（`request.get()` 等），**不强依赖**
+- 即使 Route Agent 还没产出，Dataflow 也能工作
+
+### 4.6 投票生命周期
+
+```
+Agent 启动 → agents_state[agent_name].status = "running"
+    │
+    ▼
+claim_pending_file()
+    │
+    ├── 返回 (path, file) → 分配到文件
+    │   │
+    │   ├── 维度匹配 → 分析文件 → 投 "analyze" 票 → 写入 findings
+    │   └── 维度不匹配 → 投 "skip" 票（附 reason）→ 快速释放
+    │
+    └── 返回 None → 所有文件已投票 → agent_finish
+            │
+            ▼
+         agents_state[agent_name].status = "completed"
+```
+
+## 5. LLM 集成
 
 ### 各阶段模型
 
@@ -194,7 +403,7 @@ llm:
 - 默认 max_concurrent = 4（可配置）
 - 子 agent 调用 LLM 前 acquire semaphore，完成后 release
 
-## 5. 子 Agent 内部结构
+## 6. 子 Agent 内部结构
 
 ### 子 Agent agent_loop 伪代码
 
@@ -203,63 +412,70 @@ def agent_loop(agent_name, manifest, llm_client, semaphore, max_iterations=300):
     """每个子 agent 的核心循环，运行在独立线程的独立 event loop 中"""
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    
+
     async def _run():
-        iteration = 0
+        iteration = manifest.agents_state[agent_name]["iteration"]  # 断点恢复
+
         while not manifest.can_finish() and iteration < max_iterations:
-            # 1. 从 manifest 选取下一个要分析的文件（跳过 retry_count 超限的文件）
-            target_file = manifest.claim_pending_file(agent_name)
-            if target_file is None:
-                # 所有匹配文件都已处理，对剩余不匹配文件投 skip
+            # 1. 读取共享数据（如 Dataflow 读 discovered_routes）
+            hints = manifest.get_hints(agent_name)
+
+            # 2. 选取下一个要分析的文件
+            target = manifest.claim_pending_file(agent_name)
+            if target is None:
                 manifest.vote_skip_remaining(agent_name)
+                manifest.update_agent_state(agent_name, {"iteration": iteration})
                 continue
-            
-            # 2. 标记文件为 analyzing（写入时间戳，用于断点恢复）
-            manifest.mark_analyzing(target_file.path, agent_name)
-            
+
+            # 3. 标记文件为 analyzing + 更新 agent 断点
+            manifest.mark_analyzing(target.path, agent_name)
+            manifest.update_agent_state(agent_name, {
+                "current_file": target.path,
+                "iteration": iteration,
+                "last_health_check": now_iso()
+            })
+
             try:
-                # 3. 读取文件内容
-                content = read_file(target_file.path)
-                scan_results = target_file.scan_findings
-                
-                # 4. 构建 LLM prompt + 调用 LLM
+                # 4. 分析文件
+                content = read_file(target.path)
+                messages = build_prompt(agent_name, content, target.scan_findings, hints)
+
                 semaphore.acquire()
                 try:
-                    response = await llm_client.chat(
-                        messages=build_system_prompt(agent_name) + [
-                            {"role": "user", "content": f"Analyze: {content}\nScan findings: {scan_results}"}
-                        ],
-                        tools=TOOLS,
-                    )
+                    response = await llm_client.chat(messages, tools=TOOLS)
                 finally:
                     semaphore.release()
-                
-                # 5. 处理 LLM 响应（可能含 tool calls）
+
+                # 5. 处理 tool calls 循环
                 while response.has_tool_calls:
                     tool_results = await execute_tools(response.tool_calls)
                     semaphore.acquire()
                     try:
                         response = await llm_client.chat(
-                            messages=...,
+                            build_followup(response, tool_results),
                             tools=TOOLS,
                         )
                     finally:
                         semaphore.release()
-                
-                # 6. 成功 → 更新 manifest
-                manifest.update_file(target_file.path, findings=response.findings, status="analyzed")
-                
+
+                # 6. 成功 → 写入 findings
+                manifest.update_file(target.path, findings=response.findings, status="analyzed")
+                manifest.update_agent_state(agent_name, {
+                    "files_analyzed": manifest.agents_state[agent_name]["files_analyzed"] + 1
+                })
+
             except Exception:
-                # 7. 异常 → 回退文件状态，用于断点恢复
-                manifest.handle_agent_error(target_file.path, agent_name)
-                # 不阻塞其他文件，继续下一轮
-                
+                # 7. 异常 → 回退文件状态，不阻塞其他文件
+                manifest.handle_agent_error(target.path, agent_name)
+
             iteration += 1
-        
-        # 超限退出，标记剩余文件为可跳过（附 reason）
+
+        # 超限退出
         if iteration >= max_iterations:
             manifest.vote_skip_remaining(agent_name, reason="max_iterations reached")
-    
+
+        manifest.update_agent_state(agent_name, {"status": "completed"})
+
     loop.run_until_complete(_run())
     loop.close()
 ```
@@ -278,7 +494,7 @@ TOOLS = [
 ]
 ```
 
-## 6. IPC 消息协议
+## 7. IPC 消息协议
 
 ### 输入（stdin，来自 AgentManager）
 
@@ -345,97 +561,89 @@ TOOLS = [
 }
 ```
 
-## 7. 错误处理与断点恢复
+## 8. 错误处理与断点恢复
 
-### 7.1 子 Agent 故障与自动重试
+### 8.1 子 Agent 故障与自动重试
 
 ```
 子 Agent 异常退出
        │
        ▼
-  主线程检测到 thread 终止
+主线程检测到 thread 终止
        │
        ▼
-  扫描 manifest 中所有 assigned_to = 该 agent 的文件
+读取 agents_state[agent_name]
        │
-       ├── status = "analyzing"  → 这是正在分析中崩溃的文件
-       │     retry_count += 1
-       │     ├── retry_count <= max_file_retries → reset: assigned_to = null, status = "pending"
-       │     └── retry_count > max_file_retries  → force skipped（reason: "max retries exceeded for this file"）
-       │
-       └── status = "analyzed" → 已完成，保留结果
-             未投票文件 → 保留 null，其他 agent 可接管
+       ├── status = "running" 但 thread 已死 → 确认崩溃
+       ├── current_file = "src/api/handler.py" → 定位孤儿
+       ├── restart_count → 是否超 max_agent_restarts
        │
        ▼
-  重新创建该类型子 agent 线程（重启 agent）
+清理孤儿文件:
+  current_file → retry_count += 1
+    ├── <= max_file_retries → status = "pending", assigned_to = null
+    └── >  max_file_retries → status = "skipped" (reason: "max retries exceeded")
+  其他 assigned_to = 该 agent 的 pending 文件 → assigned_to = null
        │
        ▼
-  新 agent 从 manifest 取 pending 文件继续工作
+更新 agents_state:
+  status = "restarted"
+  restart_count += 1
+  current_file = null
+  thread_id = <新线程 ID>
+       │
+       ▼
+创建新线程 → 新 agent 从 manifest 取 pending 文件继续工作
 ```
 
-### 7.2 孤儿文件检测
+### 8.2 孤儿文件检测（agent 假死）
 
-如果 agent 假死（线程未崩溃但长时间不响应），通过超时检测：
+- 每个文件有 `analyzing_started_at` 时间戳
+- 每个 agent 有 `last_health_check` 心跳时间戳
+- 主线程定时巡检：
+  - `status = "analyzing"` 且 `now - analyzing_started_at > orphan_timeout_seconds` → 孤儿文件
+  - `agents_state[agent].status = "running"` 且 `now - last_health_check > orphan_timeout_seconds` → 假死 agent
+- 孤儿文件处理：`assigned_to` 清空，status → `pending`，`retry_count += 1`
+- 假死 agent：累计 unhealthy_count 超过阈值 → 强制终止线程 → 走 8.1 流程重启
 
-- 每个文件在 manifest 中有 `analyzing_started_at` 时间戳
-- 主线程定时巡检：`status = "analyzing"` 且 `now - analyzing_started_at > orphan_timeout_seconds`
-- 判定为孤儿文件：`assigned_to` 清空，status 回退 `pending`，`retry_count += 1`
-- 对应 agent 线程被标记为 `unhealthy`，后续巡检若累计 N 次 unhealthy 则强制终止线程并重启
-
-### 7.3 完整进程崩溃恢复
+### 8.3 完整进程崩溃恢复
 
 per_file agent 子进程本身崩溃时，StageScheduler 的 stage 级重试机制触发。per_file agent 重新启动后：
 
-1. 读取 task workspace 中的 `file_manifest.json`
+1. 读取 task workspace 中的 `file_manifest.json`（包含 agents_state）
 2. 检测 manifest 中的 `phase` 字段：
-   - `phase = "classification"` → 从头开始（极罕见）
+   - `phase = "classification"` → 从头开始
    - `phase = "static_scan"` → 从 Phase 2 继续
-   - `phase = "analysis"` → 直接进入 Phase 3，跳过已完成文件
-3. Phase 3 的四个子 agent 从 manifest 中的 `pending` 文件开始工作
-4. 已在 manifest 中的 `analyzed` / `skipped` 文件结果保留
+   - `phase = "analysis"` → 直接进入 Phase 3
+3. 检查 `agents_state`：将所有 `status = "running"` 的 agent 标记为 `"crashed"`，按 8.1 流程清理孤儿文件
+4. Phase 3 重新创建四个子 agent 线程，从 manifest 中的 `pending` 文件开始工作
+5. 已在 manifest 中的 `analyzed` / `skipped` 文件结果保留
 
-### 7.4 每文件重试上限
-
-```python
-# manifest 中每个文件的字段
-{
-    "retry_count": 0,             # 该文件已被尝试分析多少次
-    "analyzing_started_at": null, # 进入 analyzing 状态的时间戳
-    ...
-}
-```
-
-| 配置 | 默认值 | 说明 |
-|------|--------|------|
-| `max_file_retries` | 3 | 单个文件最大分析重试次数 |
-| `orphan_timeout_seconds` | 600 | 文件处于 analyzing 状态的最长时间 |
-| `max_agent_restarts` | 3 | 单个子 agent 最多重启次数 |
-
-### 7.5 超时控制
+### 8.4 超时控制
 
 - 子 agent 整体超时：`max_iterations`（默认 300）强制退出循环
 - LLM 调用超时：LLM 客户端内部超时配置
 - 工具执行超时：`terminal_execute` 的 timeout 参数
 
-### 7.6 Phase 3 整体超时
+### 8.5 Phase 3 整体超时
 
 - 主线程 `thread.join(timeout=phase3_timeout)`
 - 超时后：主线程强制收集已完成结果
-- 超时剩余未分析文件：根据优先级分类处理
+- 超时剩余未分析文件：
   - high → 标记 `skipped`（reason: "phase3 timeout"），记录在 manifest 供审计
   - medium/low → 标记 `skipped`（reason: "phase3 timeout"）
 
-## 8. 配置
+## 9. 配置
 
 ```yaml
 per_file:
   # 子 agent 配置
   agents:
-    route_agent: {enabled: true, max_iterations: 300}
-    dataflow_agent: {enabled: true, max_iterations: 300}
-    auth_agent: {enabled: true, max_iterations: 300}
+    route_agent:      {enabled: true, max_iterations: 300}
+    dataflow_agent:   {enabled: true, max_iterations: 300}
+    auth_agent:       {enabled: true, max_iterations: 300}
     dependency_agent: {enabled: true, max_iterations: 300}
-  
+
   # LLM 配置
   llm:
     classification_model: claude-haiku-4-5-20251001
@@ -443,25 +651,25 @@ per_file:
     max_concurrent: 4
     max_tokens: 4096
     temperature: 0.1
-  
+
   # 超时配置
   phase3_timeout_seconds: 1800
   per_file_timeout_seconds: 3600
-  
+
   # 断点恢复与重试
   max_file_retries: 3               # 单文件最大分析重试次数
   orphan_timeout_seconds: 600        # 文件 analyzing 状态超时判定孤儿
   max_agent_restarts: 3             # 单类子 agent 最多重启次数
   manifest_sync_interval_seconds: 5  # manifest 同步到磁盘间隔
   health_check_interval_seconds: 30  # 主线程巡检间隔
-  
+
   # 静态扫描
   static_scanners:
     - semgrep
     - bandit
 ```
 
-## 9. 文件变更
+## 10. 文件变更
 
 | 操作 | 文件 |
 |------|------|
