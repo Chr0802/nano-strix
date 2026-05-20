@@ -4,10 +4,37 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from typing import Any
 
 from nano_strix.agents.per_file_lib.manifest import FileManifest
 
 logger = logging.getLogger(__name__)
+
+VALID_PRIORITIES = frozenset({"high", "medium", "low"})
+
+
+def _validate_classified_entry(entry: Any) -> dict[str, Any]:
+    """Validate a classified entry has the expected shape.
+
+    Converts invalid entries to fallback defaults
+    ``{"priority": "medium", "dimensions": []}``.
+    """
+    if not isinstance(entry, dict):
+        return {"priority": "medium", "dimensions": []}
+
+    priority = entry.get("priority")
+    if not isinstance(priority, str) or priority not in VALID_PRIORITIES:
+        priority = "medium"
+
+    dimensions = entry.get("dimensions")
+    if not isinstance(dimensions, list):
+        dimensions = []
+    else:
+        # Filter out non-string dimension entries
+        valid_dims = [d for d in dimensions if isinstance(d, str)]
+        dimensions = valid_dims
+
+    return {"priority": priority, "dimensions": dimensions}
 
 CLASSIFIER_SYSTEM_PROMPT = """You are a code security analyst. Your task is to classify source code files by risk priority and analysis dimension.
 
@@ -79,7 +106,11 @@ async def classify_files(
 
     try:
         data = json.loads(raw)
-        classified = data.get("files", {})
+        classified_raw = data.get("files", {})
+        # Validate each entry has the expected shape; convert invalid entries to fallback
+        classified = {
+            f: _validate_classified_entry(entry) for f, entry in classified_raw.items()
+        }
     except json.JSONDecodeError:
         logger.error("Failed to parse LLM classifier response: %s", raw[:500])
         # Fallback: all medium, no dimensions
@@ -90,8 +121,8 @@ async def classify_files(
         if f not in classified:
             classified[f] = {"priority": "medium", "dimensions": []}
 
-    # Only keep files that exist
-    files_dict = {f: classified[f] for f in all_files if f in classified}
+    # Build manifest dict from the known file list (classifier may return extra keys)
+    files_dict = {f: classified[f] for f in all_files}
 
     manifest = FileManifest.create(
         path=manifest_path,
