@@ -180,7 +180,10 @@ class FileManifest:
         self._path.write_text(json.dumps(data, indent=2, ensure_ascii=False))
 
     def claim_pending_file(self, agent_name: str) -> ManifestFile | None:
-        """Atomically select and reserve next file for agent. Returns None when all files voted."""
+        """Atomically select and reserve next file for agent.
+
+        Returns None when all files have been voted on.
+        """
         my_dimension = AGENT_DIMENSIONS.get(agent_name)
         with self._lock:
             candidates = []
@@ -239,13 +242,16 @@ class FileManifest:
             self._recalculate_file_status(file_path)
             self._write()
 
-    def vote_skip_remaining(self, agent_name: str, reason: str = "no matching dimension") -> None:
+    def vote_skip_remaining(
+        self, agent_name: str, reason: str = "no matching dimension"
+    ) -> None:
         with self._lock:
             for path, f in self._files.items():
                 if f.skip_votes.get(agent_name) is None:
                     f.skip_votes[agent_name] = "skip"
                     if reason not in (f.skip_reason or ""):
-                        f.skip_reason = (f.skip_reason + "; " + agent_name + ": " + reason).strip("; ")
+                        entry = f.skip_reason + "; " + agent_name + ": " + reason
+                        f.skip_reason = entry.strip("; ")
                     self._recalculate_file_status(path)
             self._write()
 
@@ -255,7 +261,8 @@ class FileManifest:
             f.retry_count += 1
             if f.retry_count > self.max_file_retries:
                 f.status = "skipped"
-                f.skip_reason = (f.skip_reason + f"; {agent_name}: max retries exceeded").strip("; ")
+                entry = f.skip_reason + f"; {agent_name}: max retries exceeded"
+                f.skip_reason = entry.strip("; ")
             else:
                 f.status = "pending"
                 f.assigned_to = None

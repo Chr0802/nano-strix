@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 SCANNER_CONFIG = {
     "semgrep": {
         "binary": "semgrep",
-        "args": lambda target: ["--config", "auto", "--json", "--no-git-ignore", target],
+        "args": lambda t: ["--config", "auto", "--json", "--no-git-ignore", t],
         "output_mode": "json",
     },
     "bandit": {

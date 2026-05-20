@@ -1,5 +1,6 @@
 # tests/test_per_file_manifest.py
 import json
+
 import pytest
 
 
@@ -251,8 +252,9 @@ class TestAgentState:
         assert state["files_analyzed"] == 3
 
     def test_orphaned_files_detected(self, empty_manifest_path, sample_files):
-        from nano_strix.agents.per_file_lib.manifest import FileManifest
         from datetime import datetime, timedelta, timezone
+
+        from nano_strix.agents.per_file_lib.manifest import FileManifest
 
         manifest = FileManifest.create(empty_manifest_path, sample_files,
                                        ["route_agent"])

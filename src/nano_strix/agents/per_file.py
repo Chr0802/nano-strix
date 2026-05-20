@@ -22,7 +22,6 @@ for _p in (str(_HERE), str(_PROJECT_SRC)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from per_file_lib.manifest import FileManifest  # noqa: E402
 from per_file_lib.classifier import classify_files  # noqa: E402
 from per_file_lib.scanner import run_static_scans  # noqa: E402
 from per_file_lib.sub_agents import SubAgentRunner  # noqa: E402
@@ -63,7 +62,8 @@ def create_llm_client(model_name: str, config: dict):
             )
         except Exception:
             raise RuntimeError(
-                "No LLM provider available. Set ANTHROPIC_API_KEY or configure llm in config.yaml"
+                "No LLM provider available. "
+                "Set ANTHROPIC_API_KEY or configure llm in config.yaml"
             )
 
 
@@ -78,8 +78,6 @@ async def main_async() -> None:
     msg = json.loads(line)
     task_id = msg["task_id"]
     target = msg.get("payload", {}).get("target", ".")
-    stage_results = msg.get("payload", {}).get("stage_results", {})
-
     logger.info("Task %s: starting per_file analysis of %s", task_id, target)
 
     target_path = Path(target)
@@ -92,7 +90,8 @@ async def main_async() -> None:
         print(json.dumps(result))
         return
 
-    # Determine workspace: parent of target (since target is typically workspace/{task_id}/source)
+    # Determine workspace: parent of target
+    # (target is typically workspace/{task_id}/source)
     # TODO: workspace discovery from target path parent is a convention;
     # ideally the workspace path should come from the task payload.
     workspace = target_path.parent  # workspace/{task_id}/
@@ -111,7 +110,9 @@ async def main_async() -> None:
     try:
         # Phase 1: Classification
         logger.info("Phase 1: Discovering and classifying files...")
-        classification_model = config.get("classification_model", "claude-haiku-4-5-20251001")
+        classification_model = config.get(
+            "classification_model", "claude-haiku-4-5-20251001"
+        )
         classifier_client = create_llm_client(classification_model, config)
 
         manifest = await classify_files(

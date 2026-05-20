@@ -65,7 +65,7 @@ def test_logging_config():
 
 
 def test_per_file_config_defaults():
-    from nano_strix.config.schema import PerFileConfig, PerFileAgentConfig
+    from nano_strix.config.schema import PerFileConfig
 
     cfg = PerFileConfig()
     assert cfg.classification_model == "claude-haiku-4-5-20251001"

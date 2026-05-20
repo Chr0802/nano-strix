@@ -211,7 +211,11 @@ class SubAgentRunner:
                     file_path, agent_name, reason=reason_text
                 )
                 self._manifest.update_agent_state(agent_name, {
-                    "files_skipped": self._manifest.agents_state[agent_name].get("files_skipped", 0) + 1
+                    "files_skipped": (
+                        self._manifest.agents_state[agent_name].get(
+                            "files_skipped", 0
+                        ) + 1
+                    )
                 })
                 iteration += 1
                 continue
@@ -274,7 +278,11 @@ class SubAgentRunner:
                 self._manifest.save()
 
                 self._manifest.update_agent_state(agent_name, {
-                    "files_analyzed": self._manifest.agents_state[agent_name].get("files_analyzed", 0) + 1
+                    "files_analyzed": (
+                        self._manifest.agents_state[agent_name].get(
+                            "files_analyzed", 0
+                        ) + 1
+                    )
                 })
 
                 # If route_agent, extract discovered routes

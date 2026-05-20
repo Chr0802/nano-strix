@@ -36,20 +36,22 @@ def _validate_classified_entry(entry: Any) -> dict[str, Any]:
 
     return {"priority": priority, "dimensions": dimensions}
 
-CLASSIFIER_SYSTEM_PROMPT = """You are a code security analyst. Your task is to classify source code files by risk priority and analysis dimension.
+CLASSIFIER_SYSTEM_PROMPT = """You are a code security analyst.
+Your task is to classify source files by risk priority and dimension.
 
 For each file in the provided directory listing, assign:
 1. **priority**: "high" | "medium" | "low"
-   - high: auth, login, database queries, API routes, input handling, command execution
-   - medium: business logic, middleware, model definitions, data transformation
-   - low: config, utilities, static assets, tests, fixtures, type stubs
-2. **dimensions**: list from ["route", "dataflow", "auth", "dependency"] (can be empty)
-   - route: defines HTTP routes or API endpoints
-   - dataflow: handles user input, database operations, command execution, file I/O
-   - auth: authentication, authorization, session management, JWT, password hashing
-   - dependency: imports third-party libraries, dependency declaration files
+   - high: auth, login, database, API routes, input handling, exec
+   - medium: business logic, middleware, model definitions
+   - low: config, utilities, static assets, tests, fixtures
+2. **dimensions**: list from ["route","dataflow","auth","dependency"]
+   - route: HTTP routes or API endpoints
+   - dataflow: user input, database ops, command exec, file I/O
+   - auth: authentication, authorization, session, JWT, passwords
+   - dependency: third-party imports, dependency declarations
 
-Return ONLY a JSON object with a "files" key mapping each file path to {"priority": ..., "dimensions": [...]}.
+Return ONLY a JSON object with "files" key mapping each file path to
+{"priority": ..., "dimensions": [...]}.
 Do NOT include any other text."""
 
 
@@ -107,7 +109,7 @@ async def classify_files(
     try:
         data = json.loads(raw)
         classified_raw = data.get("files", {})
-        # Validate each entry has the expected shape; convert invalid entries to fallback
+        # Validate entry shape; convert invalid entries to fallback
         classified = {
             f: _validate_classified_entry(entry) for f, entry in classified_raw.items()
         }

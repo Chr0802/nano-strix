@@ -1,12 +1,9 @@
 # tests/test_per_file_agent.py
-import asyncio
 import json
 import threading
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
-pytestmark = pytest.mark.asyncio
 
 
 class MockLLMResponse:
@@ -362,7 +359,7 @@ def test_health_check_detects_stale_agent(manifest_for_subagent):
 async def test_entry_point_runs_with_mocks(tmp_path, monkeypatch):
     """Full integration test of per_file agent via mocked phases."""
     import json
-    from unittest.mock import AsyncMock, MagicMock, patch
+    from unittest.mock import AsyncMock, MagicMock
 
     # Create target directory structure
     target_dir = tmp_path / "test_target"
@@ -374,17 +371,6 @@ async def test_entry_point_runs_with_mocks(tmp_path, monkeypatch):
     workspace.mkdir(parents=True)
 
     manifest_path = workspace / "file_manifest.json"
-
-    # Prepare stdin input
-    stdin_data = json.dumps({
-        "type": "task",
-        "task_id": "t-001",
-        "stage": "per_file",
-        "payload": {
-            "target": str(target_dir),
-            "stage_results": {},
-        },
-    })
 
     # Mock LLM client
     mock_llm = MagicMock()
@@ -416,7 +402,6 @@ async def test_entry_point_runs_with_mocks(tmp_path, monkeypatch):
     ]
 
     from nano_strix.agents.per_file_lib.classifier import classify_files
-    from nano_strix.agents.per_file_lib.manifest import FileManifest
     from nano_strix.agents.per_file_lib.sub_agents import SubAgentRunner
 
     agent_names = ["route_agent", "dataflow_agent", "auth_agent", "dependency_agent"]
