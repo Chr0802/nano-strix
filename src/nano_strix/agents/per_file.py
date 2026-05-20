@@ -42,13 +42,26 @@ def load_config_from_workspace(workspace: Path) -> dict:
 
 
 def create_llm_client(model_name: str, config: dict):
-    """Create an LLM client for the given model. Tries to use project's factory."""
+    """Create an LLM client for the given model.
+
+    Reads api_key and base_url from the global nano-strix config file
+    (``~/.nano-strix/config.yaml``), falling back to environment variables
+    when the config file is absent or incomplete.
+    """
     try:
+        from nano_strix.config.loader import load_config
+        from nano_strix.config.paths import DEFAULT_CONFIG_PATH
         from nano_strix.config.schema import LLMConfig
         from nano_strix.llm.factory import create_provider
 
-        cfg = LLMConfig(model=model_name)
-        return create_provider(cfg)
+        global_cfg = load_config(DEFAULT_CONFIG_PATH)
+        llm_cfg = LLMConfig(
+            provider=global_cfg.llm.provider,
+            api_key=global_cfg.llm.api_key,
+            base_url=global_cfg.llm.base_url,
+            model=model_name,
+        )
+        return create_provider(llm_cfg)
     except Exception:
         logger.warning("Could not create LLM provider via factory, using environment")
         import os
@@ -58,6 +71,7 @@ def create_llm_client(model_name: str, config: dict):
 
             return AnthropicProvider(
                 api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
+                base_url=os.environ.get("ANTHROPIC_BASE_URL", ""),
                 model=model_name,
             )
         except Exception:
@@ -108,11 +122,21 @@ async def main_async() -> None:
     ]
 
     try:
+        # Determine default model from global config
+        default_model = "claude-sonnet-4-6"
+        try:
+            from nano_strix.config.loader import load_config
+            from nano_strix.config.paths import DEFAULT_CONFIG_PATH
+
+            global_cfg = load_config(DEFAULT_CONFIG_PATH)
+            if global_cfg.llm.model:
+                default_model = global_cfg.llm.model
+        except Exception:
+            pass
+
         # Phase 1: Classification
         logger.info("Phase 1: Discovering and classifying files...")
-        classification_model = config.get(
-            "classification_model", "claude-haiku-4-5-20251001"
-        )
+        classification_model = config.get("classification_model", default_model)
         classifier_client = create_llm_client(classification_model, config)
 
         manifest = await classify_files(
@@ -153,7 +177,7 @@ async def main_async() -> None:
         manifest.phase = "analysis"
         manifest.save()
 
-        analysis_model = config.get("analysis_model", "claude-sonnet-4-6")
+        analysis_model = config.get("analysis_model", default_model)
         analysis_client = create_llm_client(analysis_model, config)
 
         max_concurrent = config.get("max_concurrent", 4)
