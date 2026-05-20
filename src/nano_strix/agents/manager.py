@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +24,7 @@ class AgentManager:
         message = IPCMessage(type="task", task_id=task_id, stage=stage, payload=payload)
 
         process = await asyncio.create_subprocess_exec(
-            "python3",
+            sys.executable,
             agent_script,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,

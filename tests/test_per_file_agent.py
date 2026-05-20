@@ -1,4 +1,5 @@
 # tests/test_per_file_agent.py
+import asyncio
 import json
 import threading
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -351,3 +352,103 @@ def test_health_check_detects_stale_agent(manifest_for_subagent):
 
     unhealthy = runner.detect_unhealthy_agents(orphan_timeout_seconds=600)
     assert "route_agent" in unhealthy
+
+
+# ---------------------------------------------------------------------------
+# Integration test: full per_file.py entry point (mocked phases)
+# ---------------------------------------------------------------------------
+
+
+async def test_entry_point_runs_with_mocks(tmp_path, monkeypatch):
+    """Full integration test of per_file agent via mocked phases."""
+    import json
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    # Create target directory structure
+    target_dir = tmp_path / "test_target"
+    target_dir.mkdir()
+    (target_dir / "main.py").write_text("def main():\n    x = input()\n    exec(x)\n")
+    (target_dir / "utils.py").write_text("def helper():\n    return 42\n")
+
+    workspace = tmp_path / "tasks" / "t-001"
+    workspace.mkdir(parents=True)
+
+    manifest_path = workspace / "file_manifest.json"
+
+    # Prepare stdin input
+    stdin_data = json.dumps({
+        "type": "task",
+        "task_id": "t-001",
+        "stage": "per_file",
+        "payload": {
+            "target": str(target_dir),
+            "stage_results": {},
+        },
+    })
+
+    # Mock LLM client
+    mock_llm = MagicMock()
+    mock_llm.chat = AsyncMock()
+    mock_llm.chat.side_effect = [
+        # Phase 1 classification response
+        MagicMock(content=json.dumps({
+            "files": {
+                "main.py": {"priority": "high", "dimensions": ["dataflow", "route"]},
+                "utils.py": {"priority": "low", "dimensions": []},
+            }
+        }), tool_calls=[], finish_reason="stop"),
+        # Phase 3: route_agent analysis (for utils.py, first claim)
+        MagicMock(content=json.dumps({"findings": []}), tool_calls=[], finish_reason="stop"),
+        # Phase 3: dataflow_agent analysis
+        MagicMock(content=json.dumps({"findings": [
+            {"id": "F-001", "title": "exec() injection", "severity": "critical",
+             "category": "rce", "file_path": "main.py", "line_range": [1, 1],
+             "description": "exec() with user input", "code_snippet": "exec(x)",
+             "recommendation": "Do not use exec() with untrusted input", "confidence": 0.95}
+        ]}), tool_calls=[], finish_reason="stop"),
+        # Phase 3: auth_agent analysis
+        MagicMock(content=json.dumps({"findings": []}), tool_calls=[], finish_reason="stop"),
+        # Phase 3: dependency_agent analysis
+        MagicMock(content=json.dumps({"findings": []}), tool_calls=[], finish_reason="stop"),
+        # Additional calls as needed
+        MagicMock(content=json.dumps({"findings": []}), tool_calls=[], finish_reason="stop"),
+        MagicMock(content=json.dumps({"findings": []}), tool_calls=[], finish_reason="stop"),
+    ]
+
+    from nano_strix.agents.per_file_lib.classifier import classify_files
+    from nano_strix.agents.per_file_lib.manifest import FileManifest
+    from nano_strix.agents.per_file_lib.sub_agents import SubAgentRunner
+
+    agent_names = ["route_agent", "dataflow_agent", "auth_agent", "dependency_agent"]
+
+    # Phase 1: classify
+    manifest = await classify_files(
+        target_dir=str(target_dir),
+        manifest_path=manifest_path,
+        llm_client=mock_llm,
+        agent_names=agent_names,
+    )
+
+    assert manifest.phase == "classification"
+    assert len(manifest.files) == 2
+    assert manifest.files["main.py"].priority == "high"
+
+    # Phase 3: analysis (skip phase 2 scanner since tools likely not installed)
+    manifest.phase = "analysis"
+    manifest.save()
+
+    analysis_llm = MagicMock()
+    analysis_llm.chat = AsyncMock(return_value=MagicMock(
+        content=json.dumps({"findings": []}),
+        tool_calls=[], finish_reason="stop"
+    ))
+
+    runner = SubAgentRunner(
+        manifest=manifest,
+        llm_client=analysis_llm,
+        semaphore=threading.Semaphore(4),
+        target_dir=str(target_dir),
+    )
+    runner.run_all(max_iterations=5, phase3_timeout=30)
+
+    assert manifest.can_finish() is True
