@@ -1,9 +1,9 @@
 # tests/test_per_file_agent.py
-import asyncio
 import json
+import threading
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock
 
 pytestmark = pytest.mark.asyncio
 
@@ -171,8 +171,10 @@ def sample_manifest(tmp_path, target_dir):
         "src/utils/format.py": {"priority": "low", "dimensions": []},
     }
     path = tmp_path / "manifest.json"
-    return FileManifest.create(path, files,
-                               ["route_agent", "dataflow_agent", "auth_agent", "dependency_agent"])
+    agent_names = [
+        "route_agent", "dataflow_agent", "auth_agent", "dependency_agent"
+    ]
+    return FileManifest.create(path, files, agent_names)
 
 
 async def test_scanner_writes_findings_to_manifest(sample_manifest, target_dir):
@@ -198,3 +200,154 @@ async def test_scanner_missing_tool_handled(sample_manifest, target_dir):
     )
     # Should not raise, should complete gracefully
     assert sample_manifest.phase == "static_scan"
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: Sub-agent runner (multi-threaded agent_loop)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def manifest_for_subagent(tmp_path):
+    from nano_strix.agents.per_file_lib.manifest import FileManifest
+
+    files = {
+        "src/auth/login.py": {"priority": "high", "dimensions": ["auth", "route"]},
+        "src/api/handler.py": {"priority": "high", "dimensions": ["route", "dataflow"]},
+        "src/utils/format.py": {"priority": "low", "dimensions": []},
+    }
+    path = tmp_path / "manifest.json"
+    agent_names = [
+        "route_agent", "dataflow_agent", "auth_agent", "dependency_agent"
+    ]
+    return FileManifest.create(path, files, agent_names)
+
+
+async def test_agent_loop_analyzes_matching_files(manifest_for_subagent):
+    from nano_strix.agents.per_file_lib.sub_agents import SubAgentRunner
+
+    mock_llm = MagicMock()
+    mock_llm.chat = AsyncMock(return_value=MockLLMResponse(
+        '{"findings": [{"id": "F-001", "title": "Test", "severity": "low"}]}'
+    ))
+
+    semaphore = threading.Semaphore(4)
+
+    runner = SubAgentRunner(
+        manifest=manifest_for_subagent,
+        llm_client=mock_llm,
+        semaphore=semaphore,
+        target_dir="/tmp/test_target",
+    )
+
+    # Since run_single_agent tries to read files, we need to mock Path.read_text
+    # to avoid file-not-found errors
+    with patch('pathlib.Path.read_text', return_value="def foo(): pass"):
+        runner.run_single_agent("route_agent", max_iterations=5)
+
+    f = manifest_for_subagent.files["src/auth/login.py"]
+    assert f.skip_votes.get("route_agent") is not None
+
+
+async def test_agent_loop_votes_skip_on_non_matching(manifest_for_subagent):
+    from nano_strix.agents.per_file_lib.sub_agents import SubAgentRunner
+
+    mock_llm = MagicMock()
+    mock_llm.chat = AsyncMock(return_value=MockLLMResponse('{"findings": []}'))
+
+    semaphore = threading.Semaphore(4)
+
+    runner = SubAgentRunner(
+        manifest=manifest_for_subagent,
+        llm_client=mock_llm,
+        semaphore=semaphore,
+        target_dir="/tmp/test_target",
+    )
+
+    with patch('pathlib.Path.read_text', return_value="def foo(): pass"):
+        runner.run_single_agent("auth_agent", max_iterations=5)
+
+    # Non-auth files should get skip votes from auth_agent
+    f = manifest_for_subagent.files["src/utils/format.py"]
+    assert f.skip_votes.get("auth_agent") == "skip"
+
+
+async def test_sub_agent_runner_runs_all_threads(manifest_for_subagent):
+    from nano_strix.agents.per_file_lib.sub_agents import SubAgentRunner
+
+    mock_llm = MagicMock()
+    mock_llm.chat = AsyncMock(return_value=MockLLMResponse(
+        '{"findings": [{"id": "F-001", "title": "Test", "severity": "low"}]}'
+    ))
+
+    semaphore = threading.Semaphore(4)
+
+    runner = SubAgentRunner(
+        manifest=manifest_for_subagent,
+        llm_client=mock_llm,
+        semaphore=semaphore,
+        target_dir="/tmp/test_target",
+    )
+
+    with patch('pathlib.Path.read_text', return_value="def foo(): pass"):
+        runner.run_all(max_iterations=5, phase3_timeout=30)
+
+    assert manifest_for_subagent.can_finish() is True
+    for state in manifest_for_subagent.agents_state.values():
+        assert state["status"] in ("completed", "pending")
+
+
+async def test_failed_thread_restarts_agent(manifest_for_subagent):
+    from nano_strix.agents.per_file_lib.sub_agents import SubAgentRunner
+
+    semaphore = threading.Semaphore(4)
+
+    class CrashingLLM:
+        call_count = 0
+        async def chat(self, *args, **kwargs):
+            CrashingLLM.call_count += 1
+            if CrashingLLM.call_count <= 1:
+                raise RuntimeError("simulated crash")
+            return MockLLMResponse('{"findings": []}')
+
+    runner = SubAgentRunner(
+        manifest=manifest_for_subagent,
+        llm_client=CrashingLLM(),
+        semaphore=semaphore,
+        target_dir="/tmp/test_target",
+        max_agent_restarts=2,
+    )
+
+    with patch('pathlib.Path.read_text', return_value="def foo(): pass"):
+        runner.run_single_agent("route_agent", max_iterations=5)
+
+    state = manifest_for_subagent.agents_state["route_agent"]
+    assert state["restart_count"] >= 1
+    assert state["status"] == "completed"
+
+
+def test_health_check_detects_stale_agent(manifest_for_subagent):
+    from datetime import datetime, timedelta, timezone
+
+    from nano_strix.agents.per_file_lib.sub_agents import SubAgentRunner
+
+    mock_llm = MagicMock()
+    mock_llm.chat = AsyncMock()
+
+    semaphore = threading.Semaphore(4)
+
+    runner = SubAgentRunner(
+        manifest=manifest_for_subagent,
+        llm_client=mock_llm,
+        semaphore=semaphore,
+        target_dir="/tmp/test_target",
+    )
+
+    stale_time = datetime.now(timezone.utc) - timedelta(seconds=9999)
+    manifest_for_subagent.update_agent_state("route_agent", {
+        "status": "running",
+        "last_health_check": stale_time.isoformat(),
+    })
+
+    unhealthy = runner.detect_unhealthy_agents(orphan_timeout_seconds=600)
+    assert "route_agent" in unhealthy
