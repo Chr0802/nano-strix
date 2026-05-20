@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json as _json
 import logging
+import sys
 import threading
 import traceback
 from datetime import datetime, timezone
@@ -73,12 +74,15 @@ class SubAgentRunner:
         self._max_agent_restarts = max_agent_restarts
         self._health_check_interval = health_check_interval
         self._threads: dict[str, threading.Thread] = {}
+        self._threads_lock = threading.Lock()
+        self._max_iterations: int = 300
         self._stop_event = threading.Event()
 
     # ---- Public API ----
 
     def run_all(self, max_iterations: int = 300, phase3_timeout: int = 1800) -> None:
         """Spawn all sub-agent threads and wait for completion."""
+        self._max_iterations = max_iterations
         agent_names = list(self._manifest.agents_state.keys())
 
         for name in agent_names:
@@ -89,7 +93,9 @@ class SubAgentRunner:
 
         # Wait with timeout
         deadline = datetime.now().timestamp() + phase3_timeout
-        for name, thread in list(self._threads.items()):
+        with self._threads_lock:
+            threads_snapshot = list(self._threads.items())
+        for name, thread in threads_snapshot:
             remaining = deadline - datetime.now().timestamp()
             if remaining <= 0:
                 logger.warning(
@@ -98,20 +104,35 @@ class SubAgentRunner:
                 break
             thread.join(timeout=max(1, remaining))
 
+        # Second pass: join any threads added by crash recovery
+        with self._threads_lock:
+            recovery_threads = [
+                (name, t) for name, t in self._threads.items()
+                if t.is_alive()
+            ]
+        for name, thread in recovery_threads:
+            remaining = deadline - datetime.now().timestamp()
+            if remaining <= 0:
+                break
+            thread.join(timeout=max(1, remaining))
+
         # Collect results from completed threads
         self._collect_results()
 
     def run_single_agent(self, agent_name: str, max_iterations: int = 300) -> None:
         """Run a single agent synchronously (for testing)."""
+        self._max_iterations = max_iterations
         self._start_agent_thread(agent_name, max_iterations)
         # Keep joining until no more restarts occur (crash recovery spawns new threads)
         while True:
-            thread = self._threads.get(agent_name)
+            with self._threads_lock:
+                thread = self._threads.get(agent_name)
             if thread is None:
                 break
             thread.join()
             # Check if the agent was restarted (crash handler replaced the thread)
-            new_thread = self._threads.get(agent_name)
+            with self._threads_lock:
+                new_thread = self._threads.get(agent_name)
             if new_thread is None or new_thread is thread:
                 break
 
@@ -124,7 +145,8 @@ class SubAgentRunner:
             daemon=True,
             name=f"per_file_{agent_name}",
         )
-        self._threads[agent_name] = thread
+        with self._threads_lock:
+            self._threads[agent_name] = thread
         self._manifest.update_agent_state(agent_name, {
             "status": "running",
             "thread_id": thread.ident,
@@ -142,7 +164,7 @@ class SubAgentRunner:
             )
         except Exception:
             logger.error("Agent %s crashed:\n%s", agent_name, traceback.format_exc())
-            self._handle_agent_crash(agent_name)
+            self._handle_agent_crash(agent_name, exc_info=sys.exc_info())
         finally:
             loop.close()
 
@@ -189,7 +211,7 @@ class SubAgentRunner:
                     file_path, agent_name, reason=reason_text
                 )
                 self._manifest.update_agent_state(agent_name, {
-                    "files_skipped": state.get("files_skipped", 0) + 1
+                    "files_skipped": self._manifest.agents_state[agent_name].get("files_skipped", 0) + 1
                 })
                 iteration += 1
                 continue
@@ -252,7 +274,7 @@ class SubAgentRunner:
                 self._manifest.save()
 
                 self._manifest.update_agent_state(agent_name, {
-                    "files_analyzed": state.get("files_analyzed", 0) + 1
+                    "files_analyzed": self._manifest.agents_state[agent_name].get("files_analyzed", 0) + 1
                 })
 
                 # If route_agent, extract discovered routes
@@ -310,7 +332,7 @@ class SubAgentRunner:
                     "line": route_info.get("line", 0),
                 })
 
-    def _handle_agent_crash(self, agent_name: str) -> None:
+    def _handle_agent_crash(self, agent_name: str, exc_info=None) -> None:
         """Handle agent thread crash: clean orphan files, restart if possible."""
         state = self._manifest.agents_state[agent_name]
         restart_count = state.get("restart_count", 0)
@@ -320,17 +342,23 @@ class SubAgentRunner:
             if f.assigned_to == agent_name and f.status == "analyzing":
                 self._manifest.handle_agent_error(path, agent_name)
 
+        # Build crash reason safely (format_exc returns None when no active exception)
+        if exc_info is not None:
+            crash_reason = "".join(traceback.format_exception(*exc_info))[-500:]
+        else:
+            fb = traceback.format_exc()
+            crash_reason = (fb or "")[-500:]
+
         if restart_count < self._max_agent_restarts:
             self._manifest.update_agent_state(agent_name, {
                 "status": "restarted",
                 "restart_count": restart_count + 1,
                 "current_file": None,
-                "crash_reason": traceback.format_exc()[-500:],
+                "crash_reason": crash_reason,
             })
             logger.warning("Restarting %s (attempt %d/%d)",
                            agent_name, restart_count + 1, self._max_agent_restarts)
-            # max_iterations captured from outer scope; state preserves iteration
-            self._start_agent_thread(agent_name, 300)
+            self._start_agent_thread(agent_name, self._max_iterations)
         else:
             self._manifest.update_agent_state(agent_name, {
                 "status": "crashed",
@@ -362,9 +390,8 @@ class SubAgentRunner:
 
     def _collect_results(self) -> None:
         """Collect results from completed threads."""
-        for name, thread in self._threads.items():
+        with self._threads_lock:
+            items = list(self._threads.items())
+        for name, thread in items:
             if thread.is_alive():
                 logger.warning("Agent %s still running at collection time", name)
-                state = self._manifest.agents_state[name]
-                if state["status"] == "running":
-                    self._handle_agent_crash(name)
