@@ -93,6 +93,8 @@ async def main_async() -> None:
         return
 
     # Determine workspace: parent of target (since target is typically workspace/{task_id}/source)
+    # TODO: workspace discovery from target path parent is a convention;
+    # ideally the workspace path should come from the task payload.
     workspace = target_path.parent  # workspace/{task_id}/
     manifest_path = workspace / "file_manifest.json"
 
@@ -106,120 +108,133 @@ async def main_async() -> None:
         "dependency_agent",
     ]
 
-    # Phase 1: Classification
-    logger.info("Phase 1: Discovering and classifying files...")
-    classification_model = config.get("classification_model", "claude-haiku-4-5-20251001")
-    classifier_client = create_llm_client(classification_model, config)
+    try:
+        # Phase 1: Classification
+        logger.info("Phase 1: Discovering and classifying files...")
+        classification_model = config.get("classification_model", "claude-haiku-4-5-20251001")
+        classifier_client = create_llm_client(classification_model, config)
 
-    manifest = await classify_files(
-        target_dir=str(target_path),
-        manifest_path=manifest_path,
-        llm_client=classifier_client,
-        agent_names=agent_names,
-        max_file_retries=config.get("max_file_retries", 3),
-    )
+        manifest = await classify_files(
+            target_dir=str(target_path),
+            manifest_path=manifest_path,
+            llm_client=classifier_client,
+            agent_names=agent_names,
+            max_file_retries=config.get("max_file_retries", 3),
+        )
 
-    _emit_progress(
-        task_id,
-        "phase1_complete",
-        {
-            "total_files": len(manifest.files),
-        },
-    )
+        _emit_progress(
+            task_id,
+            "phase1_complete",
+            {
+                "total_files": len(manifest.files),
+            },
+        )
 
-    # Phase 2: Static scanning
-    logger.info("Phase 2: Running static scanners...")
-    scanners = config.get("static_scanners", ["semgrep", "bandit"])
-    await run_static_scans(
-        manifest=manifest,
-        target_dir=str(target_path),
-        scanners=scanners,
-    )
+        # Phase 2: Static scanning
+        logger.info("Phase 2: Running static scanners...")
+        scanners = config.get("static_scanners", ["semgrep", "bandit"])
+        await run_static_scans(
+            manifest=manifest,
+            target_dir=str(target_path),
+            scanners=scanners,
+        )
 
-    _emit_progress(
-        task_id,
-        "phase2_complete",
-        {
-            "total_files": len(manifest.files),
-        },
-    )
+        _emit_progress(
+            task_id,
+            "phase2_complete",
+            {
+                "total_files": len(manifest.files),
+            },
+        )
 
-    # Phase 3: Multi-agent parallel analysis
-    logger.info("Phase 3: Starting parallel sub-agent analysis...")
-    manifest.phase = "analysis"
-    manifest.save()
+        # Phase 3: Multi-agent parallel analysis
+        logger.info("Phase 3: Starting parallel sub-agent analysis...")
+        manifest.phase = "analysis"
+        manifest.save()
 
-    analysis_model = config.get("analysis_model", "claude-sonnet-4-6")
-    analysis_client = create_llm_client(analysis_model, config)
+        analysis_model = config.get("analysis_model", "claude-sonnet-4-6")
+        analysis_client = create_llm_client(analysis_model, config)
 
-    max_concurrent = config.get("max_concurrent", 4)
-    llm_semaphore = threading.Semaphore(max_concurrent)
+        max_concurrent = config.get("max_concurrent", 4)
+        llm_semaphore = threading.Semaphore(max_concurrent)
 
-    runner = SubAgentRunner(
-        manifest=manifest,
-        llm_client=analysis_client,
-        semaphore=llm_semaphore,
-        target_dir=str(target_path),
-        max_agent_restarts=config.get("max_agent_restarts", 3),
-        health_check_interval=config.get("health_check_interval_seconds", 30),
-    )
+        runner = SubAgentRunner(
+            manifest=manifest,
+            llm_client=analysis_client,
+            semaphore=llm_semaphore,
+            target_dir=str(target_path),
+            max_agent_restarts=config.get("max_agent_restarts", 3),
+            health_check_interval=config.get("health_check_interval_seconds", 30),
+        )
 
-    # Start health check timer
-    def _health_check_loop():
-        while not runner._stop_event.is_set():
-            _time.sleep(config.get("health_check_interval_seconds", 30))
-            unhealthy = runner.detect_unhealthy_agents(
-                config.get("orphan_timeout_seconds", 600)
+        # Start health check timer
+        def _health_check_loop():
+            while not runner._stop_event.is_set():
+                _time.sleep(config.get("health_check_interval_seconds", 30))
+                unhealthy = runner.detect_unhealthy_agents(
+                    config.get("orphan_timeout_seconds", 600)
+                )
+                for name, reason in unhealthy.items():
+                    logger.warning("Unhealthy agent %s: %s", name, reason)
+
+        health_thread = threading.Thread(target=_health_check_loop, daemon=True)
+        health_thread.start()
+
+        try:
+            runner.run_all(
+                max_iterations=300,
+                phase3_timeout=config.get("phase3_timeout_seconds", 1800),
             )
-            for name, reason in unhealthy.items():
-                logger.warning("Unhealthy agent %s: %s", name, reason)
+        finally:
+            runner._stop_event.set()
+            health_thread.join(timeout=5)
 
-    health_thread = threading.Thread(target=_health_check_loop, daemon=True)
-    health_thread.start()
+        # Collect findings
+        all_findings = []
+        for f in manifest.files.values():
+            all_findings.extend(f.findings)
 
-    runner.run_all(
-        max_iterations=300,
-        phase3_timeout=config.get("phase3_timeout_seconds", 1800),
-    )
+        coverage = manifest._compute_coverage()
 
-    runner._stop_event.set()
-    health_thread.join(timeout=5)
+        logger.info(
+            "Analysis complete: %d files, %d findings",
+            coverage["total"],
+            len(all_findings),
+        )
 
-    # Collect findings
-    all_findings = []
-    for f in manifest.files.values():
-        all_findings.extend(f.findings)
+        result = {
+            "type": "result",
+            "task_id": task_id,
+            "payload": {
+                "status": "ok",
+                "stage": "per_file",
+                "target": target,
+                "findings": all_findings,
+                "coverage_summary": coverage,
+                "manifest_path": str(manifest_path),
+            },
+        }
+        print(json.dumps(result, ensure_ascii=False))
 
-    coverage = manifest._compute_coverage()
-
-    logger.info(
-        "Analysis complete: %d files, %d findings",
-        coverage["total"],
-        len(all_findings),
-    )
-
-    result = {
-        "type": "result",
-        "task_id": task_id,
-        "payload": {
-            "status": "ok",
-            "stage": "per_file",
-            "target": target,
-            "findings": all_findings,
-            "coverage_summary": coverage,
-            "manifest_path": str(manifest_path),
-        },
-    }
-    print(json.dumps(result, ensure_ascii=False))
+    except Exception as exc:
+        logger.exception("per_file agent failed")
+        error_result = {
+            "type": "result",
+            "task_id": task_id,
+            "payload": {"status": "error", "error": str(exc)},
+        }
+        print(json.dumps(error_result, ensure_ascii=False))
 
 
 def _emit_progress(task_id: str, phase: str, extra: dict) -> None:
+    """Emit a progress message to stderr so stdout stays clean for IPC."""
     msg = {
         "type": "progress",
         "task_id": task_id,
         "payload": {"phase": phase, **extra},
     }
-    print(json.dumps(msg, ensure_ascii=False))
+    sys.stderr.write(json.dumps(msg, ensure_ascii=False) + "\n")
+    sys.stderr.flush()
 
 
 def main():
