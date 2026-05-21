@@ -1,17 +1,41 @@
-"""strix-report agent: 模拟执行，便于 CLI 调试。"""
+"""strix-report agent: findings aggregation and report generation.
+
+Launched by AgentManager as a subprocess. Reads task JSON from stdin,
+generates a final report, writes result JSON to stdout.
+"""
+from __future__ import annotations
 
 import json
 import logging
 import sys
 import time
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [report] %(message)s")
 logger = logging.getLogger(__name__)
 
 SLEEP_SECONDS = 1
 
 
+def _setup_logging() -> None:
+    """Configure logging for this subprocess."""
+    try:
+        from nano_strix.config.loader import load_config
+        from nano_strix.config.paths import DEFAULT_CONFIG_PATH
+        from nano_strix.logging.setup import setup_logging
+
+        cfg = load_config(DEFAULT_CONFIG_PATH)
+        setup_logging(cfg.logging)
+    except Exception:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s [%(name)s] %(levelname)s %(message)s",
+            datefmt="%H:%M:%S",
+            stream=sys.stderr,
+        )
+
+
 def main():
+    _setup_logging()
+
     line = sys.stdin.readline()
     msg = json.loads(line)
     task_id = msg["task_id"]

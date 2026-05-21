@@ -22,6 +22,22 @@ async def _execute_pipeline(
     input_overrides: dict[str, str] | None = None,
     verbose: bool = False,
 ) -> list[str]:
+    # Configure logging from config.yaml (--verbose overrides to DEBUG)
+    cfg_level = config.logging.level.upper()
+    log_level = (
+        logging.DEBUG if verbose else getattr(logging, cfg_level, logging.INFO)
+    )
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s [%(name)s] %(levelname)s %(message)s",
+        datefmt="%H:%M:%S",
+    )
+    logger.info("Logging configured: level=%s", logging.getLevelName(log_level))
+    logger.info(
+        "Config: llm.provider=%s llm.model=%s",
+        config.llm.provider, config.llm.model,
+    )
+
     config.pipeline.stages = stages
     if input_overrides:
         config.pipeline.input_overrides = input_overrides
@@ -199,9 +215,6 @@ def run(
     workspace = Path(output) if output else Path.cwd()
     workspace.mkdir(parents=True, exist_ok=True)
 
-    if verbose:
-        logging.basicConfig(level=logging.DEBUG)
-
     asyncio.run(_execute_pipeline(
         workspace=workspace,
         config=cfg,
@@ -298,9 +311,6 @@ def run_batch(targets_file, config_path, model, output, verbose):
 
     workspace = Path(output) if output else Path.cwd()
     workspace.mkdir(parents=True, exist_ok=True)
-
-    if verbose:
-        logging.basicConfig(level=logging.DEBUG)
 
     asyncio.run(_execute_pipeline(
         workspace=workspace,
