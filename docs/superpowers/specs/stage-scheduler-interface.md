@@ -295,13 +295,16 @@ for stage in self._stages:
   "id": "F-001",
   "title": "简短描述",
   "severity": "critical|high|medium|low|info",
+  "exploitability": "E0 | E1 | E2 | E3 | E4",
+  "nature": "A1..A8 | B1..B6 | C1..C6 | D1..D5 | E1..E6 | F1..F6",
+  ""
   "category": "sqli|xss|rce|auth|...",
   "file_path": "相对路径",
   "line_range": [起始行, 结束行],
   "description": "漏洞详细描述",
   "code_snippet": "相关代码片段",
   "recommendation": "修复建议",
-  "confidence": 0.95
+  "confidence": "HIGH | MEDIUM | LOW"
 }
 ```
 
