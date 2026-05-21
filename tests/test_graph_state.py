@@ -78,3 +78,37 @@ def test_graph_globals_exist():
     assert isinstance(graph._running_agents, dict)
     assert isinstance(graph._agent_instances, dict)
     assert isinstance(graph._agent_states, dict)
+
+
+def test_has_waiting_timeout_zero_disabled():
+    state = AgentState()
+    state.waiting_timeout = 0
+    state.enter_waiting_state()
+    assert state.has_waiting_timeout() is False
+
+
+def test_has_waiting_timeout_not_waiting():
+    state = AgentState()
+    assert state.has_waiting_timeout() is False
+
+
+def test_has_waiting_timeout_stop_requested():
+    state = AgentState()
+    state.enter_waiting_state()
+    state.stop_requested = True
+    assert state.has_waiting_timeout() is False
+
+
+def test_has_waiting_timeout_completed():
+    state = AgentState()
+    state.enter_waiting_state()
+    state.completed = True
+    assert state.has_waiting_timeout() is False
+
+
+def test_get_conversation_history_is_copy():
+    state = AgentState()
+    state.add_message("user", "original")
+    history = state.get_conversation_history()
+    history.append({"role": "user", "content": "modified"})
+    assert len(state.messages) == 1  # original unchanged

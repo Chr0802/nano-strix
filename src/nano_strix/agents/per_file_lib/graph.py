@@ -27,11 +27,32 @@ class AgentState:
     waiting_timeout: int = 600
     final_result: dict[str, Any] | None = None
     _wake_event: asyncio.Event = field(default_factory=asyncio.Event)
+    _event_loop: asyncio.AbstractEventLoop | None = field(default=None)
+
+    def __post_init__(self) -> None:
+        try:
+            self._event_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._event_loop = None
+
+    def signal_wake(self) -> None:
+        """Thread-safe wake signal. Can be called from any thread.
+
+        When the event loop is running (production), schedules the wake via
+        *call_soon_threadsafe* so that cross-thread callers are handled
+        correctly.  When the loop is not running (tests, or during
+        initialisation), falls back to a direct ``.set()`` which is safe
+        because we are in the same thread.
+        """
+        if self._event_loop is not None and self._event_loop.is_running():
+            self._event_loop.call_soon_threadsafe(self._wake_event.set)
+        else:
+            self._wake_event.set()
 
     def add_message(self, role: str, content: str) -> None:
         self.messages.append({"role": role, "content": content})
         if self.waiting_for_input:
-            self._wake_event.set()
+            self.signal_wake()
 
     def enter_waiting_state(self) -> None:
         self.waiting_for_input = True
@@ -40,7 +61,7 @@ class AgentState:
     def resume_from_waiting(self) -> None:
         self.waiting_for_input = False
         self.waiting_start_time = None
-        self._wake_event.set()
+        self.signal_wake()
 
     async def wait_for_wake(self, timeout: float = 0.5) -> None:
         try:
@@ -74,6 +95,12 @@ class AgentState:
 
 
 # ---- Global State ----
+#
+# Concurrency notes:
+#   All writes to `_agent_graph["nodes"]` and `_agent_graph["edges"]` MUST
+#   hold `_agent_graph_lock`. Readers (including iteration) SHOULD also
+#   acquire the lock to avoid TOCTOU races, unless the caller can prove
+#   single-threaded access.
 
 _agent_graph: dict[str, Any] = {"nodes": {}, "edges": []}
 _root_agent_id: str | None = None
