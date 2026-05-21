@@ -29,10 +29,14 @@ deep_analysis.py (子进程，StageScheduler 视角不变)
     ├── Phase 4: spawn CrossLinkAgent (多文件关联分析)
     │   └── wait_for_message() 等待完成
     │
+    ├── Phase 5: spawn ReviewAgent (结果复核与精炼)
+    │   ├── 对所有 findings 做去重、交叉验证、消除假阳性
+    │   └── wait_for_message() 等待完成
+    │
     └── 汇总结果 → stdout (给 StageScheduler)
 ```
 
-- **Phase 序列固定**：classify → scan → per-file → cross-link，但每 phase 内部可递归拆分
+- **Phase 序列固定**：classify → scan → per-file → cross-link → review，但每 phase 内部可递归拆分
 - **不再有硬编码函数调用**：root agent 是 LLM agent，通过 create_agent/wait_for_message 驱动
 - **递归拆分**：每 phase 的 agent 根据任务量决定直接执行还是 spawn 多个子 agent
 - **层级化 Manifest**：每层 agent 维护局部 manifest，父 agent 合并子 agent 结果
@@ -77,7 +81,7 @@ class AgentState:
     agent_name: str
     parent_id: str | None
     task: str
-    role: str                         # classify / scan / analyze / cross-link
+    role: str                         # classify / scan / analyze / cross-link / review
     messages: list[dict[str, Any]]    # conversation history
     iteration: int = 0
     max_iterations: int = 300
@@ -126,7 +130,8 @@ DeepAnalyseAgent (base, 进程内线程运行)
   ├── ClassifyAgent    — Phase 1: 文件分类
   ├── ScanAgent        — Phase 2: 静态扫描 (Docker sandbox)
   ├── AnalyzeAgent     — Phase 3: 逐文件深度分析
-  └── CrossLinkAgent   — Phase 4: 多文件关联分析
+  ├── CrossLinkAgent   — Phase 4: 多文件关联分析
+  └── ReviewAgent      — Phase 5: 结果复核与精炼
 ```
 
 ### 3.2 Prompt 模板（统一模板 + 参数化角色）
@@ -179,6 +184,7 @@ If no issues found, return empty findings list.
 | ScanAgent | tool_server_execute (Docker sandbox), create_agent, agent_finish |
 | AnalyzeAgent | file_read, file_search, directory_list, load_skill, create_agent, agent_finish |
 | CrossLinkAgent | file_read, file_search, load_skill, read_manifest, create_agent, agent_finish |
+| ReviewAgent | read_manifest, file_read, load_skill, create_agent, agent_finish |
 
 ## 4. LLM 多协议支持
 
@@ -301,7 +307,8 @@ RootAgent
         ├── Phase 3: AnalyzeAgent → local_manifest_3 (深度分析)
         │     ├── SubAnalyzeAgent-A → local_manifest_3a
         │     └── SubAnalyzeAgent-B → local_manifest_3b  (merge → 3)
-        └── Phase 4: CrossLinkAgent → local_manifest_4 (跨文件关联)
+        ├── Phase 4: CrossLinkAgent → local_manifest_4 (跨文件关联)
+        └── Phase 5: ReviewAgent → local_manifest_5 (复核精炼 findings)
 ```
 
 ### 7.2 规则
@@ -351,7 +358,8 @@ RootAgent
             "phase1_classification": 2.3,
             "phase2_static_scan": 5.1,
             "phase3_per_file_analysis": 45.2,
-            "phase4_cross_link": 12.0
+            "phase4_cross_link": 12.0,
+            "phase5_review": 8.5
         }
     }
 }
@@ -363,7 +371,7 @@ RootAgent
 |------|------|------|
 | 重写 | `agents/per_file.py` → `agents/deep_analysis.py` | 新 stage 入口，启动 RootAgent |
 | 新增 | `agents/per_file_lib/graph.py` | Agent graph 基础设施，与 strix 对齐 |
-| 新增 | `agents/per_file_lib/deep_agent.py` | DeepAnalyseAgent 基类 + 5 种 agent 子类 |
+| 新增 | `agents/per_file_lib/deep_agent.py` | DeepAnalyseAgent 基类 + 6 种 agent 子类 |
 | 新增 | `agents/per_file_lib/prompts.py` | 统一 prompt 模板 + 角色参数 |
 | 重写 | `agents/per_file_lib/manifest.py` | 增加 to_dict/from_dict/merge |
 | 新增 | `llm/openai_compatible.py` | OpenAI-compatible provider |
