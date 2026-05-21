@@ -21,6 +21,7 @@ async def _execute_pipeline(
     stages: list[str],
     input_overrides: dict[str, str] | None = None,
     verbose: bool = False,
+    no_snapshot: bool = False,
 ) -> list[str]:
     # Configure logging from config.yaml (--verbose overrides to DEBUG)
     cfg_level = config.logging.level.upper()
@@ -61,7 +62,9 @@ async def _execute_pipeline(
                 f"max_retries={sc.max_retries}"
             )
 
-    task_ids = await scheduler.submit_batch(targets)
+    task_ids = await scheduler.submit_batch(
+        targets, no_snapshot=no_snapshot,
+    )
     click.echo(f"Submitted {len(task_ids)} tasks")
     await scheduler.run()
 
@@ -222,6 +225,7 @@ def run(
         stages=stages,
         input_overrides=overrides,
         verbose=verbose,
+        no_snapshot=no_snapshot,
     ))
 
 

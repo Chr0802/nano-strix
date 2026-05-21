@@ -113,7 +113,8 @@ async def main_async() -> None:
 
     msg = json.loads(line)
     task_id = msg["task_id"]
-    target = msg.get("payload", {}).get("target", ".")
+    payload = msg.get("payload", {})
+    target = payload.get("target", ".")
 
     target_path = Path(target)
     if not target_path.exists():
@@ -125,8 +126,15 @@ async def main_async() -> None:
         print(json.dumps(result))
         return
 
-    # Determine workspace
-    workspace = target_path.parent  # workspace/{task_id}/
+    # Task-level workspace: read from payload (set by scheduler), fall back
+    # to target_path.parent for backward compatibility.
+    workspace_str = payload.get("workspace")
+    if workspace_str:
+        workspace = Path(workspace_str)
+    else:
+        workspace = target_path.parent
+    workspace.mkdir(parents=True, exist_ok=True)
+
     manifest_path = workspace / "file_manifest.json"
 
     # Set up logging (after workspace is known so log file can be placed there)
