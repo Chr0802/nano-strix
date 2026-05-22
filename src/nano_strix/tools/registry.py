@@ -24,7 +24,7 @@ def register_tool(func: Callable[..., Any]) -> Callable[..., Any]:
 
     schema_path = _find_schema_path(func, module)
     if schema_path and schema_path.exists():
-        _tool_param_schemas[name] = _parse_param_schema(schema_path)
+        _tool_param_schemas[name] = _parse_param_schema(schema_path, name)
 
     tools.append(func_dict)
     _tools_by_name[name] = func
@@ -48,31 +48,34 @@ def _find_schema_path(func: Callable, module: str) -> Path | None:
     return None
 
 
-def _parse_param_schema(schema_path: Path) -> dict[str, Any]:
+def _parse_param_schema(schema_path: Path, tool_name: str) -> dict[str, Any]:
     tree = ET.parse(schema_path)
     root = tree.getroot()
+
+    tool_elem = root.find(f".//tool[@name='{tool_name}']")
+    if tool_elem is None:
+        return {"type": "object", "properties": {}, "required": []}
 
     params: list[dict[str, Any]] = []
     required: list[str] = []
 
-    for tool_elem in root.findall(".//tool"):
-        for param_elem in tool_elem.findall(".//parameter"):
-            name = param_elem.get("name", "")
-            ptype = param_elem.get("type", "string")
-            is_required = param_elem.get("required", "false").lower() == "true"
-            desc_elem = param_elem.find("description")
-            description = desc_elem.text if desc_elem is not None else ""
+    for param_elem in tool_elem.findall(".//parameter"):
+        name = param_elem.get("name", "")
+        ptype = param_elem.get("type", "string")
+        is_required = param_elem.get("required", "false").lower() == "true"
+        desc_elem = param_elem.find("description")
+        description = desc_elem.text if desc_elem is not None else ""
 
-            params.append(
-                {
-                    "name": name,
-                    "type": ptype,
-                    "description": description,
-                    "required": is_required,
-                }
-            )
-            if is_required:
-                required.append(name)
+        params.append(
+            {
+                "name": name,
+                "type": ptype,
+                "description": description,
+                "required": is_required,
+            }
+        )
+        if is_required:
+            required.append(name)
 
     properties = {}
     for p in params:
