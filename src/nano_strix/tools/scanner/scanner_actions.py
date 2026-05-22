@@ -69,3 +69,88 @@ async def sqlmap_scan(target: str, flags: str = "") -> dict[str, Any]:
     if flags:
         args.extend(flags.split())
     return await _run_scanner("sqlmap", args, timeout=600)
+
+
+@register_tool
+async def semgrep_scan(target: str = "/workspace/source") -> dict[str, Any]:
+    """Run semgrep static analysis on a target directory.
+
+    Args:
+        target: Directory or file path to scan.
+    """
+    from nano_strix.tools.context import get_current_sandbox
+
+    sandbox = get_current_sandbox()
+    if sandbox is not None:
+        return await sandbox.call_tool_server("semgrep", {"target": target})
+
+    # Fallback: host subprocess
+    return await _run_scanner(
+        "semgrep", ["--config", "auto", "--json", "--no-git-ignore", target]
+    )
+
+
+@register_tool
+async def bandit_scan(target: str = "/workspace/source") -> dict[str, Any]:
+    """Run bandit Python security scanner on a target directory.
+
+    Args:
+        target: Directory or file path to scan.
+    """
+    from nano_strix.tools.context import get_current_sandbox
+
+    sandbox = get_current_sandbox()
+    if sandbox is not None:
+        return await sandbox.call_tool_server("bandit", {"target": target})
+
+    return await _run_scanner("bandit", ["-r", "-f", "json", target])
+
+
+@register_tool
+async def gitleaks_scan(target: str = "/workspace/source") -> dict[str, Any]:
+    """Run gitleaks to detect secrets and credentials in source code.
+
+    Args:
+        target: Directory to scan for secrets.
+    """
+    from nano_strix.tools.context import get_current_sandbox
+
+    sandbox = get_current_sandbox()
+    if sandbox is not None:
+        return await sandbox.call_tool_server("gitleaks", {"target": target})
+
+    return await _run_scanner(
+        "gitleaks", ["detect", "--source", target, "--no-git", "-f", "json"]
+    )
+
+
+@register_tool
+async def trufflehog_scan(target: str = "/workspace/source") -> dict[str, Any]:
+    """Run trufflehog to find secrets and verify them.
+
+    Args:
+        target: Directory to scan for secrets.
+    """
+    from nano_strix.tools.context import get_current_sandbox
+
+    sandbox = get_current_sandbox()
+    if sandbox is not None:
+        return await sandbox.call_tool_server("trufflehog", {"target": target})
+
+    return await _run_scanner("trufflehog", ["filesystem", target, "--json"])
+
+
+@register_tool
+async def eslint_scan(target: str = "/workspace/source") -> dict[str, Any]:
+    """Run ESLint static analysis on JavaScript/TypeScript files.
+
+    Args:
+        target: Directory or file path to scan.
+    """
+    from nano_strix.tools.context import get_current_sandbox
+
+    sandbox = get_current_sandbox()
+    if sandbox is not None:
+        return await sandbox.call_tool_server("eslint", {"target": target})
+
+    return await _run_scanner("eslint", [target, "--format", "json"])

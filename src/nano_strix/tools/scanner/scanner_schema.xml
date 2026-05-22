@@ -36,4 +36,44 @@
       </parameter>
     </parameters>
   </tool>
+  <tool name="semgrep_scan">
+    <description>Run semgrep static analysis on a target directory to find code vulnerabilities and bugs.</description>
+    <parameters>
+      <parameter name="target" type="string" required="false">
+        <description>Directory or file path to scan (default: /workspace/source).</description>
+      </parameter>
+    </parameters>
+  </tool>
+  <tool name="bandit_scan">
+    <description>Run bandit Python security scanner on a target directory.</description>
+    <parameters>
+      <parameter name="target" type="string" required="false">
+        <description>Directory or file path to scan (default: /workspace/source).</description>
+      </parameter>
+    </parameters>
+  </tool>
+  <tool name="gitleaks_scan">
+    <description>Run gitleaks to detect hardcoded secrets and credentials in source code.</description>
+    <parameters>
+      <parameter name="target" type="string" required="false">
+        <description>Directory to scan for secrets (default: /workspace/source).</description>
+      </parameter>
+    </parameters>
+  </tool>
+  <tool name="trufflehog_scan">
+    <description>Run trufflehog to find and verify secrets in source code.</description>
+    <parameters>
+      <parameter name="target" type="string" required="false">
+        <description>Directory to scan for secrets (default: /workspace/source).</description>
+      </parameter>
+    </parameters>
+  </tool>
+  <tool name="eslint_scan">
+    <description>Run ESLint static analysis on JavaScript/TypeScript files.</description>
+    <parameters>
+      <parameter name="target" type="string" required="false">
+        <description>Directory or file path to scan (default: /workspace/source).</description>
+      </parameter>
+    </parameters>
+  </tool>
 </tools>
