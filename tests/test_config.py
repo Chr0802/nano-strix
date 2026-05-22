@@ -13,7 +13,7 @@ from nano_strix.config.schema import (
 def test_default_config():
     cfg = AppConfig()
     assert cfg.llm.provider == "anthropic"
-    assert cfg.pipeline.stages == ["per_file", "cross_file", "exploit", "report"]
+    assert cfg.pipeline.stages == ["deep_analysis", "exploit", "report"]
     assert cfg.ipc.timeout_seconds == 300
 
 
@@ -26,7 +26,7 @@ def test_sandbox_config():
 
 def test_pipeline_presets():
     cfg = PipelineConfig()
-    assert cfg.stages == ["per_file", "cross_file", "exploit", "report"]
+    assert cfg.stages == ["deep_analysis", "exploit", "report"]
 
 
 def test_load_config_from_yaml():

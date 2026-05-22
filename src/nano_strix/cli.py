@@ -186,10 +186,10 @@ def run(
         cfg.llm.model = model
 
     pipeline_presets = {
-        "full": ["per_file", "cross_file", "exploit", "report"],
-        "analysis": ["per_file", "cross_file", "report"],
+        "full": ["deep_analysis", "exploit", "report"],
+        "analysis": ["deep_analysis", "report"],
         "exploit_only": ["exploit", "report"],
-        "quick": ["per_file", "report"],
+        "quick": ["deep_analysis", "report"],
     }
 
     if pipeline in pipeline_presets:

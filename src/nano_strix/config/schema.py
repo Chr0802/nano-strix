@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass
@@ -13,8 +14,7 @@ class StageConcurrency:
 class SchedulerConfig:
     stages: dict[str, StageConcurrency] = field(
         default_factory=lambda: {
-            "per_file": StageConcurrency(max_concurrent=2, max_retries=2),
-            "cross_file": StageConcurrency(max_concurrent=1, max_retries=2),
+            "deep_analysis": StageConcurrency(max_concurrent=2, max_retries=2),
             "exploit": StageConcurrency(max_concurrent=1, max_retries=2),
             "report": StageConcurrency(max_concurrent=1, max_retries=0),
         }
@@ -64,21 +64,23 @@ class LLMConfig:
 @dataclass
 class PipelineConfig:
     stages: list[str] = field(
-        default_factory=lambda: ["per_file", "cross_file", "exploit", "report"]
+        default_factory=lambda: ["deep_analysis", "exploit", "report"]
     )
     input_overrides: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
 class SandboxConfig:
-    sandbox_type: str = "docker"  # docker / process
-    image: str = "python:3.12-slim"
+    sandbox_type: str = "docker"  # docker | process
+    image: str = "nano-strix-sandbox:latest"
     network: str = "none"
+    tool_server_port: int = 8080
     memory_limit: str = "512m"
     cpu_limit: float = 1.0
     timeout: int = 600
     env_vars: dict[str, str] = field(default_factory=dict)
     volumes: list[dict] = field(default_factory=list)
+    resources: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -95,6 +97,30 @@ class LoggingConfig:
 
 
 @dataclass
+class DeepAnalysisConfig:
+    """Configuration for the deep-analysis stage."""
+    classification_model: str = "claude-haiku-4-5-20251001"
+    analysis_model: str = "claude-sonnet-4-6"
+    max_concurrent_llm: int = 4
+    max_tokens: int = 4096
+    temperature: float = 0.1
+    phase1_split_threshold: int = 50
+    phase2_split_threshold: int = 100
+    phase3_split_threshold: int = 50
+    phase4_split_threshold: int = 30
+    phase5_split_threshold: int = 50
+    per_file_timeout_seconds: int = 3600
+    max_agent_iterations: int = 300
+    agent_waiting_timeout: int = 600
+
+
+@dataclass
+class SkillsConfig:
+    """Configuration for the skills loading system."""
+    skills_dir: str = ""
+
+
+@dataclass
 class AppConfig:
     llm: LLMConfig = field(default_factory=LLMConfig)
     pipeline: PipelineConfig = field(default_factory=PipelineConfig)
@@ -103,3 +129,5 @@ class AppConfig:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
     per_file: PerFileConfig = field(default_factory=PerFileConfig)
+    deep_analysis: DeepAnalysisConfig = field(default_factory=DeepAnalysisConfig)
+    skills: SkillsConfig = field(default_factory=SkillsConfig)

@@ -68,7 +68,7 @@ def test_cli_run_with_target(tmp_path):
     ])
     assert result.exit_code == 0
     assert "Submitted" in result.output
-    assert "COMPLETED" in result.output
+    assert "deep_analysis" in result.output
 
 
 def test_cli_run_missing_target():

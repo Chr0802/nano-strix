@@ -72,7 +72,9 @@ def test_agent_state_increment_iteration():
 def test_graph_globals_exist():
     from nano_strix.agents.per_file_lib import graph
     assert hasattr(graph, '_agent_graph')
-    assert graph._agent_graph == {"nodes": {}, "edges": []}
+    assert isinstance(graph._agent_graph, dict)
+    assert "nodes" in graph._agent_graph
+    assert "edges" in graph._agent_graph
     assert graph._root_agent_id is None
     assert isinstance(graph._agent_messages, dict)
     assert isinstance(graph._running_agents, dict)

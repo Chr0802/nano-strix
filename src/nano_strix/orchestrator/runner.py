@@ -9,10 +9,9 @@ from nano_strix.config.schema import AppConfig, PipelineConfig
 _AGENTS_DIR = Path(__file__).resolve().parent.parent / "agents"
 
 STAGE_SCRIPTS = {
-    "per_file": str(_AGENTS_DIR / "per_file.py"),
-    "cross_file": str(_AGENTS_DIR / "cross_file.py"),
-    "exploit": str(_AGENTS_DIR / "exploit.py"),
-    "report": str(_AGENTS_DIR / "report.py"),
+    "deep_analysis": str(_AGENTS_DIR / "deep_analysis.py"),
+    "exploit":       str(_AGENTS_DIR / "exploit.py"),
+    "report":        str(_AGENTS_DIR / "report.py"),
 }
 
 
