@@ -25,13 +25,21 @@ def test_cli_version():
 
 
 def test_cli_config_init(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
+    config_file = tmp_path / "config.yaml"
+    monkeypatch.setattr(
+        "nano_strix.cli.DEFAULT_CONFIG_PATH", config_file,
+    )
     runner = CliRunner()
     result = runner.invoke(main, ["config", "init"])
     assert result.exit_code == 0
+    assert config_file.exists()
 
 
-def test_cli_config_show():
+def test_cli_config_show(tmp_path, monkeypatch):
+    config_file = tmp_path / "config.yaml"
+    monkeypatch.setattr(
+        "nano_strix.cli.DEFAULT_CONFIG_PATH", config_file,
+    )
     runner = CliRunner()
     result = runner.invoke(main, ["config", "show"])
     assert result.exit_code == 0
