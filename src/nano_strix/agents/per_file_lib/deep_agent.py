@@ -198,3 +198,72 @@ class DeepAnalyseAgent:
                 **schema,
             })
         return result
+
+
+class RootAgent(DeepAnalyseAgent):
+    """Root orchestrator: schedules phases, manages manifest coverage."""
+
+    def __init__(self, state: AgentState, llm_provider: Any = None) -> None:
+        state.role = "root"
+        super().__init__(state, llm_provider)
+        self._split_threshold: int = 50
+
+
+class ClassifyAgent(DeepAnalyseAgent):
+    """Phase 1: File classification by priority and dimensions."""
+
+    def __init__(self, state: AgentState, llm_provider: Any = None) -> None:
+        state.role = "classify"
+        super().__init__(state, llm_provider)
+        self._split_threshold: int = 50
+
+    def _should_split(self, file_count: int) -> bool:
+        return file_count > self._split_threshold
+
+
+class ScanAgent(DeepAnalyseAgent):
+    """Phase 2: Static scanning via Docker sandbox tool server."""
+
+    def __init__(self, state: AgentState, llm_provider: Any = None) -> None:
+        state.role = "scan"
+        super().__init__(state, llm_provider)
+        self._split_threshold: int = 100
+
+    def _should_split(self, file_count: int) -> bool:
+        return file_count > self._split_threshold
+
+
+class AnalyzeAgent(DeepAnalyseAgent):
+    """Phase 3: Per-file deep vulnerability analysis."""
+
+    def __init__(self, state: AgentState, llm_provider: Any = None) -> None:
+        state.role = "analyze"
+        super().__init__(state, llm_provider)
+        self._split_threshold: int = 50
+
+    def _should_split(self, file_count: int) -> bool:
+        return file_count > self._split_threshold
+
+
+class CrossLinkAgent(DeepAnalyseAgent):
+    """Phase 4: Cross-file correlation analysis."""
+
+    def __init__(self, state: AgentState, llm_provider: Any = None) -> None:
+        state.role = "cross-link"
+        super().__init__(state, llm_provider)
+        self._split_threshold: int = 30
+
+    def _should_split(self, finding_count: int) -> bool:
+        return finding_count > self._split_threshold
+
+
+class ReviewAgent(DeepAnalyseAgent):
+    """Phase 5: Findings deduplication, cross-validation, and refinement."""
+
+    def __init__(self, state: AgentState, llm_provider: Any = None) -> None:
+        state.role = "review"
+        super().__init__(state, llm_provider)
+        self._split_threshold: int = 50
+
+    def _should_split(self, finding_count: int) -> bool:
+        return finding_count > self._split_threshold
