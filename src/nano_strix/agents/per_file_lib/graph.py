@@ -202,39 +202,44 @@ def create_agent(
                 child_state.add_message(msg["role"], msg["content"])
             child_state.add_message("user", "</inherited_context_from_parent>")
 
-        # Deferred import to avoid circular dependency (DeepAnalyseAgent exists later in Task 9)
-        # For now, create a placeholder agent instance
+        # Resolve LLM provider from parent agent instance
+        parent_agent = _agent_instances.get(parent_id)
+        llm_provider = getattr(parent_agent, "_llm", None) if parent_agent is not None else None
+
         agent = None
         try:
             from nano_strix.agents.per_file_lib.deep_agent import DeepAnalyseAgent  # type: ignore[import-untyped]  # noqa: F811
         except ImportError:
-            # DeepAnalyseAgent not yet implemented (Task 9). Register node/state
-            # without spawning the thread. Tests that don't need the thread
-            # will still pass.
             with _agent_graph_lock:
                 _agent_instances[child_state.agent_id] = None
         else:
-            agent = DeepAnalyseAgent(state=child_state)
+            agent = DeepAnalyseAgent(state=child_state, llm_provider=llm_provider)
 
             with _agent_graph_lock:
                 _agent_instances[child_state.agent_id] = agent
 
-            thread = threading.Thread(
-                target=_run_agent_in_thread,
-                args=(agent, child_state),
-                daemon=True,
-                name=f"DeepAnalyse-{name}-{child_state.agent_id}",
-            )
-            thread.start()
-            _running_agents[child_state.agent_id] = thread
+            if llm_provider is not None:
+                thread = threading.Thread(
+                    target=_run_agent_in_thread,
+                    args=(agent, child_state),
+                    daemon=True,
+                    name=f"DeepAnalyse-{name}-{child_state.agent_id}",
+                )
+                thread.start()
+                _running_agents[child_state.agent_id] = thread
 
     except Exception as e:
         return {"success": False, "error": f"Failed to create agent: {e}", "agent_id": None}
     else:
+        started = llm_provider is not None
         return {
             "success": True,
             "agent_id": child_state.agent_id,
-            "message": f"Agent '{name}' created and started asynchronously",
+            "message": (
+                f"Agent '{name}' created and started asynchronously"
+                if started
+                else f"Agent '{name}' registered (no LLM provider; thread not started)"
+            ),
             "agent_info": {
                 "id": child_state.agent_id,
                 "name": name,
