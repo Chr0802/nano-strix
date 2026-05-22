@@ -358,3 +358,61 @@ class FileManifest:
         with self._lock:
             self.discovered_routes.append(route)
             self._write()
+
+    def to_dict(self) -> dict[str, Any]:
+        with self._lock:
+            return {
+                "phase": self.phase,
+                "max_file_retries": self.max_file_retries,
+                "agents_state": dict(self.agents_state),
+                "discovered_routes": list(self.discovered_routes),
+                "files": {path: mf.to_dict() for path, mf in self._files.items()},
+                "agent_names": list(self._agent_names),
+            }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "FileManifest":
+        files: dict[str, ManifestFile] = {}
+        for file_path, fdata in data.get("files", {}).items():
+            mf = ManifestFile.from_dict(fdata)
+            mf._path = file_path
+            files[file_path] = mf
+        m = cls(
+            path=Path("/tmp/dummy.json"),  # caller should set _path
+            phase=data.get("phase", "analysis"),
+            files=files,
+            agents_state=data.get("agents_state", {}),
+            discovered_routes=data.get("discovered_routes", []),
+            max_file_retries=data.get("max_file_retries", 3),
+        )
+        m._agent_names = data.get("agent_names", list(m.agents_state.keys()))
+        return m
+
+    def merge(self, other: "FileManifest") -> None:
+        """Merge another manifest into this one. Combined findings, scan_findings, and skip_votes."""
+        with self._lock:
+            for path, other_file in other.files.items():
+                if path not in self._files:
+                    self._files[path] = other_file
+                else:
+                    existing = self._files[path]
+                    existing.findings.extend(other_file.findings)
+                    existing.scan_findings.extend(other_file.scan_findings)
+                    existing.skip_votes.update(other_file.skip_votes)
+                    # If other has a higher priority, use it
+                    prio_order = {"high": 0, "medium": 1, "low": 2}
+                    if prio_order.get(other_file.priority, 2) < prio_order.get(existing.priority, 2):
+                        existing.priority = other_file.priority
+                    # Merge dimensions
+                    for dim in other_file.dimensions:
+                        if dim not in existing.dimensions:
+                            existing.dimensions.append(dim)
+            self.discovered_routes.extend(other.discovered_routes)
+            # Merge agents_state
+            for name, state in other.agents_state.items():
+                if name not in self.agents_state:
+                    self.agents_state[name] = state
+                else:
+                    self.agents_state[name].update(state)
+            # Rebuild agent_names
+            self._agent_names = list(self.agents_state.keys())
