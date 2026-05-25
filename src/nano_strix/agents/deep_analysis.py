@@ -35,7 +35,11 @@ from nano_strix.logging.setup import setup_logging
 from nano_strix.logging.llm_logger import LLMLogger
 from nano_strix.logging.tool_logger import ToolLogger
 from nano_strix.logging.graph_logger import GraphLogger
-from nano_strix.agents.deep_analysis_lib.graph import set_graph_logger
+from nano_strix.agents.deep_analysis_lib.graph import (
+    set_graph_logger,
+    set_llm_logger,
+    set_tool_logger,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +91,8 @@ def main() -> None:
     tool_logger = ToolLogger(logs_dir / "tools.jsonl")
     graph_logger = GraphLogger(logs_dir / "graph.jsonl", task_id=task_id)
     set_graph_logger(graph_logger)
+    set_llm_logger(llm_logger)
+    set_tool_logger(tool_logger)
 
     logger.info("Deep analysis stage started: task=%s target=%s", task_id, target)
 

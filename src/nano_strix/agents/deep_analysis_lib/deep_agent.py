@@ -110,7 +110,15 @@ class DeepAnalyseAgent:
             except Exception:
                 logger.exception("Error in agent %s iteration %d", self.state.agent_name, self.state.iteration)
                 if self.state.agent_id in _agent_graph["nodes"]:
+                    old_status = _agent_graph["nodes"][self.state.agent_id]["status"]
                     _agent_graph["nodes"][self.state.agent_id]["status"] = "error"
+                    if get_graph_logger():
+                        get_graph_logger().log_agent_status_change(
+                            agent_id=self.state.agent_id,
+                            old_status=old_status,
+                            new_status="error",
+                            reason="Agent loop exception",
+                        )
                 raise
 
     async def _process_iteration(self) -> bool:

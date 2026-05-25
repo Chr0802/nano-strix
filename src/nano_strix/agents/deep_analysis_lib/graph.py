@@ -125,6 +125,32 @@ def get_graph_logger() -> Any:
     return _graph_logger
 
 
+_llm_logger: Any = None
+_tool_logger: Any = None
+
+
+def set_llm_logger(logger: Any) -> None:
+    """Set the LLMLogger instance for the current task."""
+    global _llm_logger
+    _llm_logger = logger
+
+
+def get_llm_logger() -> Any:
+    """Return the current LLMLogger instance, or None."""
+    return _llm_logger
+
+
+def set_tool_logger(logger: Any) -> None:
+    """Set the ToolLogger instance for the current task."""
+    global _tool_logger
+    _tool_logger = logger
+
+
+def get_tool_logger() -> Any:
+    """Return the current ToolLogger instance, or None."""
+    return _tool_logger
+
+
 # ---- Helpers ----
 
 def _generate_message_id() -> str:
@@ -225,9 +251,11 @@ def create_agent(
                 child_state.add_message(msg["role"], msg["content"])
             child_state.add_message("user", "</inherited_context_from_parent>")
 
-        # Resolve LLM provider from parent agent instance
+        # Resolve LLM provider and loggers from parent agent instance
         parent_agent = _agent_instances.get(parent_id)
         llm_provider = getattr(parent_agent, "_llm", None) if parent_agent is not None else None
+        llm_logger = getattr(parent_agent, "_llm_logger", None) if parent_agent is not None else _llm_logger
+        tool_logger = getattr(parent_agent, "_tool_logger", None) if parent_agent is not None else _tool_logger
 
         agent = None
         try:
@@ -236,7 +264,12 @@ def create_agent(
             with _agent_graph_lock:
                 _agent_instances[child_state.agent_id] = None
         else:
-            agent = DeepAnalyseAgent(state=child_state, llm_provider=llm_provider)
+            agent = DeepAnalyseAgent(
+                state=child_state,
+                llm_provider=llm_provider,
+                llm_logger=llm_logger,
+                tool_logger=tool_logger,
+            )
 
             with _agent_graph_lock:
                 _agent_instances[child_state.agent_id] = agent
@@ -585,8 +618,16 @@ def _run_agent_in_thread(
     except Exception:
         agent_id = state.agent_id
         if agent_id in _agent_graph["nodes"]:
+            old_status = _agent_graph["nodes"][agent_id]["status"]
             _agent_graph["nodes"][agent_id]["status"] = "error"
             _agent_graph["nodes"][agent_id]["finished_at"] = _now_iso()
+            if _graph_logger:
+                _graph_logger.log_agent_status_change(
+                    agent_id=agent_id,
+                    old_status=old_status,
+                    new_status="error",
+                    reason="Agent thread exception",
+                )
         _running_agents.pop(agent_id, None)
         raise
     else:
@@ -594,8 +635,18 @@ def _run_agent_in_thread(
         if agent_id in _agent_graph["nodes"]:
             node = _agent_graph["nodes"][agent_id]
             if node["status"] not in ("finished", "failed", "error"):
+                old_status = node["status"]
                 node["status"] = "completed" if not state.stop_requested else "stopped"
-            node["finished_at"] = _now_iso()
+                node["finished_at"] = _now_iso()
+                if _graph_logger:
+                    _graph_logger.log_agent_status_change(
+                        agent_id=agent_id,
+                        old_status=old_status,
+                        new_status=node["status"],
+                        reason="Agent thread completed" if not state.stop_requested else "Agent stopped",
+                    )
+            else:
+                node["finished_at"] = _now_iso()
             node["result"] = result
         _running_agents.pop(agent_id, None)
         return result or {}
