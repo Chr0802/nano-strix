@@ -12,7 +12,7 @@ from nano_strix.agents.deep_analysis_lib.graph import (
     _agent_graph_lock,
     _root_agent_id,
     _now_iso,
-    _graph_logger,
+    get_graph_logger,
 )
 from nano_strix.agents.deep_analysis_lib.prompts import build_system_prompt
 
@@ -87,8 +87,8 @@ class DeepAnalyseAgent:
                     self.state.add_message("user", "Waiting timeout reached. Resuming.")
                     if self.state.agent_id in _agent_graph["nodes"]:
                         _agent_graph["nodes"][self.state.agent_id]["status"] = "running"
-                    if _graph_logger:
-                        _graph_logger.log_agent_status_change(
+                    if get_graph_logger():
+                        get_graph_logger().log_agent_status_change(
                             agent_id=self.state.agent_id,
                             old_status="waiting",
                             new_status="running",
@@ -220,8 +220,8 @@ class DeepAnalyseAgent:
                 has_new = True
                 if agent_id in _agent_graph["nodes"]:
                     _agent_graph["nodes"][agent_id]["status"] = "running"
-                if _graph_logger:
-                    _graph_logger.log_agent_status_change(
+                if get_graph_logger():
+                    get_graph_logger().log_agent_status_change(
                         agent_id=agent_id,
                         old_status="waiting",
                         new_status="running",
