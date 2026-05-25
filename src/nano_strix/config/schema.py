@@ -73,7 +73,7 @@ class PipelineConfig:
 class SandboxConfig:
     sandbox_type: str = "docker"  # docker | process
     image: str = "nano-strix-sandbox:latest"
-    network: str = "none"
+    network: str = "bridge"
     tool_server_port: int = 8080
     memory_limit: str = "512m"
     cpu_limit: float = 1.0

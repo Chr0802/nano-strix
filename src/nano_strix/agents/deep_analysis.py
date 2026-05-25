@@ -158,8 +158,10 @@ def main() -> None:
                         set_current_sandbox(sandbox)
                         logger.info("Docker sandbox started on %s", sandbox.tool_server_url)
                     except asyncio.TimeoutError:
-                        logger.warning("Docker sandbox creation timed out, falling back to host tools")
-                        sandbox = None
+                        logger.warning(
+                            "Docker sandbox creation timed out after 120s, "
+                            "falling back to host tools"
+                        )
                     except Exception:
                         logger.warning(
                             "Failed to create Docker sandbox, falling back to host tools",
