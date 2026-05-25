@@ -23,9 +23,17 @@ class DeepAnalyseAgent:
 
     max_iterations: int = 300
 
-    def __init__(self, state: AgentState, llm_provider: Any = None) -> None:
+    def __init__(
+        self,
+        state: AgentState,
+        llm_provider: Any = None,
+        llm_logger: Any = None,
+        tool_logger: Any = None,
+    ) -> None:
         self.state = state
         self._llm = llm_provider
+        self._llm_logger = llm_logger
+        self._tool_logger = tool_logger
         self._system_prompt = build_system_prompt(state.role) if state.role else ""
         self._register_in_graph()
 
@@ -98,17 +106,49 @@ class DeepAnalyseAgent:
                 raise
 
     async def _process_iteration(self) -> bool:
+        import time as _time
         from nano_strix.tools.executor import execute_tool_with_validation
         from nano_strix.tools.registry import get_tool_by_name
 
         messages = [{"role": "system", "content": self._system_prompt}] + self.state.get_conversation_history()
+        tools = self._get_tools()
 
+        # --- LLM Request Logging ---
+        model_name = getattr(self._llm, 'model', 'unknown') if self._llm else 'unknown'
+        if self._llm_logger:
+            self._llm_logger.log_request_full(
+                task_id=self.state.task_id,
+                stage="deep_analysis",
+                model=model_name,
+                messages=messages,
+                tools=tools,
+            )
+
+        t0 = _time.monotonic()
         response = await self._llm.chat(
             messages=messages,
-            tools=self._get_tools(),
+            tools=tools,
             temperature=0.1,
             max_tokens=4096,
         )
+        latency_ms = (_time.monotonic() - t0) * 1000
+
+        # --- LLM Response Logging ---
+        if self._llm_logger:
+            self._llm_logger.log_response_full(
+                task_id=self.state.task_id,
+                stage="deep_analysis",
+                model=response.model or model_name,
+                content=response.content,
+                tool_calls=[
+                    {"id": tc.id, "name": tc.name, "arguments": tc.arguments}
+                    for tc in response.tool_calls
+                ],
+                input_tokens=response.usage.get("input_tokens", 0),
+                output_tokens=response.usage.get("output_tokens", 0),
+                latency_ms=latency_ms,
+                finish_reason=response.finish_reason,
+            )
 
         content = (response.content or "").strip()
         if not content and not response.has_tool_calls:
@@ -123,6 +163,7 @@ class DeepAnalyseAgent:
         if response.has_tool_calls:
             should_finish = False
             for tc in response.tool_calls:
+                t_tool_start = _time.monotonic()
                 try:
                     tool_fn = get_tool_by_name(tc.name)
                 except KeyError:
@@ -132,6 +173,19 @@ class DeepAnalyseAgent:
                         result = await execute_tool_with_validation(tc.name, tc.arguments)
                     except Exception as e:
                         result = {"error": str(e)}
+                tool_elapsed = (_time.monotonic() - t_tool_start) * 1000
+
+                # --- Tool Execution Logging ---
+                if self._tool_logger:
+                    self._tool_logger.log_execution(
+                        task_id=self.state.task_id,
+                        stage="deep_analysis",
+                        tool=tc.name,
+                        arguments=tc.arguments,
+                        result=result,
+                        duration_ms=tool_elapsed,
+                    )
+
                 self.state.add_message("user", f"Tool result ({tc.name}): {str(result)[:2000]}")
 
                 if tc.name == "agent_finish":
