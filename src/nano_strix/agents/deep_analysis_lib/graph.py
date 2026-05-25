@@ -208,7 +208,7 @@ def create_agent(
 
         agent = None
         try:
-            from nano_strix.agents.per_file_lib.deep_agent import DeepAnalyseAgent  # type: ignore[import-untyped]  # noqa: F811
+            from nano_strix.agents.deep_analysis_lib.deep_agent import DeepAnalyseAgent  # type: ignore[import-untyped]  # noqa: F811
         except ImportError:
             with _agent_graph_lock:
                 _agent_instances[child_state.agent_id] = None

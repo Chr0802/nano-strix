@@ -21,7 +21,7 @@ def sample_files():
 
 class TestFileManifestCreate:
     def test_create_with_files(self, empty_manifest_path, sample_files):
-        from nano_strix.agents.per_file_lib.manifest import FileManifest
+        from nano_strix.agents.deep_analysis_lib.manifest import FileManifest
 
         manifest = FileManifest.create(
             path=empty_manifest_path,
@@ -39,7 +39,7 @@ class TestFileManifestCreate:
         }
 
     def test_create_writes_to_disk(self, empty_manifest_path, sample_files):
-        from nano_strix.agents.per_file_lib.manifest import FileManifest
+        from nano_strix.agents.deep_analysis_lib.manifest import FileManifest
 
         FileManifest.create(empty_manifest_path, sample_files, ["route_agent"])
         assert empty_manifest_path.exists()
@@ -50,7 +50,7 @@ class TestFileManifestCreate:
 
 class TestFileManifestLoad:
     def test_load_restores_state(self, empty_manifest_path, sample_files):
-        from nano_strix.agents.per_file_lib.manifest import FileManifest
+        from nano_strix.agents.deep_analysis_lib.manifest import FileManifest
 
         m1 = FileManifest.create(empty_manifest_path, sample_files,
                                  ["route_agent", "dataflow_agent", "auth_agent", "dependency_agent"])
@@ -62,7 +62,7 @@ class TestFileManifestLoad:
         assert m2.phase == m1.phase
 
     def test_load_missing_file_raises(self, tmp_path):
-        from nano_strix.agents.per_file_lib.manifest import FileManifest
+        from nano_strix.agents.deep_analysis_lib.manifest import FileManifest
 
         with pytest.raises(FileNotFoundError):
             FileManifest.load(tmp_path / "nonexistent.json")
@@ -70,7 +70,7 @@ class TestFileManifestLoad:
 
 class TestClaimPendingFile:
     def test_returns_highest_priority_dimension_match(self, empty_manifest_path, sample_files):
-        from nano_strix.agents.per_file_lib.manifest import FileManifest
+        from nano_strix.agents.deep_analysis_lib.manifest import FileManifest
 
         manifest = FileManifest.create(empty_manifest_path, sample_files,
                                        ["route_agent", "dataflow_agent", "auth_agent", "dependency_agent"])
@@ -81,7 +81,7 @@ class TestClaimPendingFile:
         assert claimed.path == "src/auth/login.py"
 
     def test_skips_already_analyzing_file(self, empty_manifest_path, sample_files):
-        from nano_strix.agents.per_file_lib.manifest import FileManifest
+        from nano_strix.agents.deep_analysis_lib.manifest import FileManifest
 
         manifest = FileManifest.create(empty_manifest_path, sample_files,
                                        ["route_agent", "dataflow_agent", "auth_agent", "dependency_agent"])
@@ -93,7 +93,7 @@ class TestClaimPendingFile:
         assert claimed.path == "src/api/handler.py"
 
     def test_returns_none_when_all_voted(self, empty_manifest_path, sample_files):
-        from nano_strix.agents.per_file_lib.manifest import FileManifest
+        from nano_strix.agents.deep_analysis_lib.manifest import FileManifest
 
         manifest = FileManifest.create(empty_manifest_path, sample_files,
                                        ["route_agent"])
@@ -103,7 +103,7 @@ class TestClaimPendingFile:
         assert manifest.claim_pending_file("route_agent") is None
 
     def test_dimension_mismatch_still_returned_for_skip_vote(self, empty_manifest_path, sample_files):
-        from nano_strix.agents.per_file_lib.manifest import FileManifest
+        from nano_strix.agents.deep_analysis_lib.manifest import FileManifest
 
         manifest = FileManifest.create(empty_manifest_path, sample_files,
                                        ["route_agent"])
@@ -121,7 +121,7 @@ class TestClaimPendingFile:
 
 class TestSkipVotes:
     def test_all_agents_skip_makes_skipped(self, empty_manifest_path, sample_files):
-        from nano_strix.agents.per_file_lib.manifest import FileManifest
+        from nano_strix.agents.deep_analysis_lib.manifest import FileManifest
 
         manifest = FileManifest.create(empty_manifest_path, sample_files,
                                        ["route_agent", "dataflow_agent", "auth_agent", "dependency_agent"])
@@ -133,7 +133,7 @@ class TestSkipVotes:
         assert f.status == "skipped"
 
     def test_one_analyze_vote_keeps_pending(self, empty_manifest_path, sample_files):
-        from nano_strix.agents.per_file_lib.manifest import FileManifest
+        from nano_strix.agents.deep_analysis_lib.manifest import FileManifest
 
         manifest = FileManifest.create(empty_manifest_path, sample_files,
                                        ["route_agent", "dataflow_agent", "auth_agent", "dependency_agent"])
@@ -147,7 +147,7 @@ class TestSkipVotes:
         assert f.status in ("pending", "analyzing")
 
     def test_all_voted_no_nulls(self, empty_manifest_path, sample_files):
-        from nano_strix.agents.per_file_lib.manifest import FileManifest
+        from nano_strix.agents.deep_analysis_lib.manifest import FileManifest
 
         manifest = FileManifest.create(empty_manifest_path, sample_files,
                                        ["route_agent", "dataflow_agent", "auth_agent", "dependency_agent"])
@@ -158,7 +158,7 @@ class TestSkipVotes:
         assert manifest._all_votes_cast("src/utils/format.py") is True
 
     def test_some_null_votes_not_all_cast(self, empty_manifest_path, sample_files):
-        from nano_strix.agents.per_file_lib.manifest import FileManifest
+        from nano_strix.agents.deep_analysis_lib.manifest import FileManifest
 
         manifest = FileManifest.create(empty_manifest_path, sample_files,
                                        ["route_agent", "dataflow_agent"])
@@ -171,7 +171,7 @@ class TestSkipVotes:
 
 class TestCanFinish:
     def test_all_high_covered_returns_true(self, empty_manifest_path, sample_files):
-        from nano_strix.agents.per_file_lib.manifest import FileManifest
+        from nano_strix.agents.deep_analysis_lib.manifest import FileManifest
 
         manifest = FileManifest.create(empty_manifest_path, sample_files,
                                        ["route_agent"])
@@ -182,7 +182,7 @@ class TestCanFinish:
         assert manifest.can_finish() is True
 
     def test_pending_high_returns_false(self, empty_manifest_path, sample_files):
-        from nano_strix.agents.per_file_lib.manifest import FileManifest
+        from nano_strix.agents.deep_analysis_lib.manifest import FileManifest
 
         manifest = FileManifest.create(empty_manifest_path, sample_files,
                                        ["route_agent"])
@@ -193,7 +193,7 @@ class TestCanFinish:
 
 class TestClaimAtomicReservation:
     def test_claim_pending_file_atomically_reserves(self, empty_manifest_path, sample_files):
-        from nano_strix.agents.per_file_lib.manifest import FileManifest
+        from nano_strix.agents.deep_analysis_lib.manifest import FileManifest
 
         manifest = FileManifest.create(empty_manifest_path, sample_files,
                                        ["route_agent"])
@@ -209,7 +209,7 @@ class TestClaimAtomicReservation:
 
 class TestAgentError:
     def test_increments_retry_and_resets_status(self, empty_manifest_path, sample_files):
-        from nano_strix.agents.per_file_lib.manifest import FileManifest
+        from nano_strix.agents.deep_analysis_lib.manifest import FileManifest
 
         manifest = FileManifest.create(empty_manifest_path, sample_files,
                                        ["route_agent"])
@@ -222,7 +222,7 @@ class TestAgentError:
         assert f.assigned_to is None
 
     def test_exceeds_max_retries_forces_skip(self, empty_manifest_path, sample_files):
-        from nano_strix.agents.per_file_lib.manifest import FileManifest
+        from nano_strix.agents.deep_analysis_lib.manifest import FileManifest
 
         manifest = FileManifest.create(empty_manifest_path, sample_files,
                                        ["route_agent"], max_file_retries=1)
@@ -236,7 +236,7 @@ class TestAgentError:
 
 class TestAgentState:
     def test_update_agent_state(self, empty_manifest_path, sample_files):
-        from nano_strix.agents.per_file_lib.manifest import FileManifest
+        from nano_strix.agents.deep_analysis_lib.manifest import FileManifest
 
         manifest = FileManifest.create(empty_manifest_path, sample_files,
                                        ["route_agent"])
@@ -254,7 +254,7 @@ class TestAgentState:
     def test_orphaned_files_detected(self, empty_manifest_path, sample_files):
         from datetime import datetime, timedelta, timezone
 
-        from nano_strix.agents.per_file_lib.manifest import FileManifest
+        from nano_strix.agents.deep_analysis_lib.manifest import FileManifest
 
         manifest = FileManifest.create(empty_manifest_path, sample_files,
                                        ["route_agent"])
@@ -269,7 +269,7 @@ class TestAgentState:
 
 class TestSaveAndLoad:
     def test_roundtrip_preserves_all_data(self, tmp_path, sample_files):
-        from nano_strix.agents.per_file_lib.manifest import FileManifest
+        from nano_strix.agents.deep_analysis_lib.manifest import FileManifest
 
         path = tmp_path / "test_manifest.json"
         m1 = FileManifest.create(path, sample_files,

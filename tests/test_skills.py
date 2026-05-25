@@ -34,7 +34,7 @@ def test_skill_loader_get_nonexistent():
 
 def test_load_skill_tool():
     from nano_strix.skills.loader import load_skill
-    from nano_strix.agents.per_file_lib.graph import AgentState
+    from nano_strix.agents.deep_analysis_lib.graph import AgentState
     import tempfile
 
     with tempfile.TemporaryDirectory() as tmpdir:

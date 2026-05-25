@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from nano_strix.agents.per_file_lib.manifest import FileManifest, ManifestFile
+from nano_strix.agents.deep_analysis_lib.manifest import FileManifest, ManifestFile
 
 
 def _make_manifest(path: Path, files: dict) -> FileManifest:

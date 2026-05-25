@@ -15,7 +15,7 @@ import pytest
 
 def _cleanup_globals():
     """Reset all graph module globals in-place (so existing references stay valid)."""
-    import nano_strix.agents.per_file_lib.graph as g
+    import nano_strix.agents.deep_analysis_lib.graph as g
 
     g._agent_graph["nodes"].clear()
     g._agent_graph["edges"].clear()

@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from nano_strix.agents.per_file_lib.graph import (
+from nano_strix.agents.deep_analysis_lib.graph import (
     AgentState,
     _agent_graph,
     _agent_messages,
@@ -13,7 +13,7 @@ from nano_strix.agents.per_file_lib.graph import (
     _root_agent_id,
     _now_iso,
 )
-from nano_strix.agents.per_file_lib.prompts import build_system_prompt
+from nano_strix.agents.deep_analysis_lib.prompts import build_system_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +59,7 @@ class DeepAnalyseAgent:
             _agent_messages[self.state.agent_id] = []
 
         if self.state.parent_id is None and _root_agent_id is None:
-            import nano_strix.agents.per_file_lib.graph as g
+            import nano_strix.agents.deep_analysis_lib.graph as g
             g._root_agent_id = self.state.agent_id
 
     def set_llm_provider(self, provider: Any) -> None:

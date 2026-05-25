@@ -16,8 +16,8 @@ import time as _time
 from pathlib import Path
 from typing import Any
 
-from nano_strix.agents.per_file_lib.deep_agent import RootAgent
-from nano_strix.agents.per_file_lib.graph import (
+from nano_strix.agents.deep_analysis_lib.deep_agent import RootAgent
+from nano_strix.agents.deep_analysis_lib.graph import (
     AgentState,
     create_agent,
     wait_for_message,
@@ -27,7 +27,7 @@ from nano_strix.agents.per_file_lib.graph import (
     _agent_graph,
     _running_agents,
 )
-from nano_strix.agents.per_file_lib.manifest import FileManifest
+from nano_strix.agents.deep_analysis_lib.manifest import FileManifest
 from nano_strix.config.loader import load_config
 from nano_strix.config.paths import DEFAULT_CONFIG_PATH
 from nano_strix.llm.factory import create_provider

@@ -1,6 +1,6 @@
 import asyncio
 import pytest
-from nano_strix.agents.per_file_lib.graph import AgentState
+from nano_strix.agents.deep_analysis_lib.graph import AgentState
 
 
 def test_agent_state_defaults():
@@ -70,7 +70,7 @@ def test_agent_state_increment_iteration():
 
 
 def test_graph_globals_exist():
-    from nano_strix.agents.per_file_lib import graph
+    from nano_strix.agents.deep_analysis_lib import graph
     assert hasattr(graph, '_agent_graph')
     assert isinstance(graph._agent_graph, dict)
     assert "nodes" in graph._agent_graph

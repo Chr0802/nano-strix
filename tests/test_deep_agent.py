@@ -1,6 +1,6 @@
 import pytest
-from nano_strix.agents.per_file_lib.deep_agent import DeepAnalyseAgent
-from nano_strix.agents.per_file_lib.graph import AgentState
+from nano_strix.agents.deep_analysis_lib.deep_agent import DeepAnalyseAgent
+from nano_strix.agents.deep_analysis_lib.graph import AgentState
 
 
 class FakeLLM:
@@ -29,9 +29,9 @@ def test_deep_agent_creation():
 
 
 def test_check_agent_messages_resumes_waiting():
-    from nano_strix.agents.per_file_lib.graph import _agent_messages, _agent_graph
+    from nano_strix.agents.deep_analysis_lib.graph import _agent_messages, _agent_graph
     # Clean up
-    from nano_strix.agents.per_file_lib import graph
+    from nano_strix.agents.deep_analysis_lib import graph
     graph._agent_graph["nodes"].clear()
     graph._agent_messages.clear()
 

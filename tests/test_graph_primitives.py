@@ -1,5 +1,5 @@
 import pytest
-from nano_strix.agents.per_file_lib.graph import (
+from nano_strix.agents.deep_analysis_lib.graph import (
     AgentState,
     create_agent,
     wait_for_message,
@@ -14,7 +14,7 @@ from nano_strix.agents.per_file_lib.graph import (
 
 def _cleanup_graph():
     """Reset global state between tests (mutate in-place to avoid stale references)."""
-    import nano_strix.agents.per_file_lib.graph as g
+    import nano_strix.agents.deep_analysis_lib.graph as g
     g._agent_graph["nodes"].clear()
     g._agent_graph["edges"].clear()
     g._root_agent_id = None

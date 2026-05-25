@@ -1,4 +1,4 @@
-from nano_strix.agents.per_file_lib.prompts import (
+from nano_strix.agents.deep_analysis_lib.prompts import (
     ROLE_TEMPLATE,
     ROLE_DEFINITIONS,
     build_system_prompt,

@@ -1,8 +1,8 @@
-from nano_strix.agents.per_file_lib.deep_agent import (
+from nano_strix.agents.deep_analysis_lib.deep_agent import (
     DeepAnalyseAgent, RootAgent, ClassifyAgent, ScanAgent,
     AnalyzeAgent, CrossLinkAgent, ReviewAgent,
 )
-from nano_strix.agents.per_file_lib.graph import AgentState
+from nano_strix.agents.deep_analysis_lib.graph import AgentState
 
 
 def test_root_agent_role():
