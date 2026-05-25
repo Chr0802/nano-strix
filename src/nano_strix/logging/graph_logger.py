@@ -18,20 +18,16 @@ class GraphLogger:
         self._stage = stage
 
     def _write(self, event: str, data: dict[str, Any]) -> None:
-        try:
-            self._logger.write(
-                LogEntry(
-                    task_id=self._task_id,
-                    stage=self._stage,
-                    category="graph",
-                    level="info",
-                    event=event,
-                    data=data,
-                )
+        self._logger.write(
+            LogEntry(
+                task_id=self._task_id,
+                stage=self._stage,
+                category="graph",
+                level="info",
+                event=event,
+                data=data,
             )
-        except Exception:
-            import logging
-            logging.warning("GraphLogger: failed to write event %s", event)
+        )
 
     def log_agent_created(
         self,
