@@ -32,6 +32,10 @@ from nano_strix.config.loader import load_config
 from nano_strix.config.paths import DEFAULT_CONFIG_PATH
 from nano_strix.llm.factory import create_provider
 from nano_strix.logging.setup import setup_logging
+from nano_strix.logging.llm_logger import LLMLogger
+from nano_strix.logging.tool_logger import ToolLogger
+from nano_strix.logging.graph_logger import GraphLogger
+from nano_strix.agents.deep_analysis_lib.graph import set_graph_logger
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +81,13 @@ def main() -> None:
     config = load_config(DEFAULT_CONFIG_PATH)
     setup_logging(config.logging)
 
+    # Create structured JSONL loggers for this task
+    logs_dir = Path(payload.get("workspace", ".")) / "logs"
+    llm_logger = LLMLogger(logs_dir / "llm.jsonl")
+    tool_logger = ToolLogger(logs_dir / "tools.jsonl")
+    graph_logger = GraphLogger(logs_dir / "graph.jsonl", task_id=task_id)
+    set_graph_logger(graph_logger)
+
     logger.info("Deep analysis stage started: task=%s target=%s", task_id, target)
 
     t_start = _time.monotonic()
@@ -103,7 +114,12 @@ def main() -> None:
             waiting_timeout=1800,  # 30 min per phase
         )
 
-        root_agent = RootAgent(state=root_state, llm_provider=llm)
+        root_agent = RootAgent(
+            state=root_state,
+            llm_provider=llm,
+            llm_logger=llm_logger,
+            tool_logger=tool_logger,
+        )
 
         # Run root agent (synchronous wrapper for the async agent_loop)
         loop = asyncio.new_event_loop()

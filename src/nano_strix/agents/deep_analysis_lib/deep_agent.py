@@ -272,9 +272,9 @@ class DeepAnalyseAgent:
 class RootAgent(DeepAnalyseAgent):
     """Root orchestrator: schedules phases, manages manifest coverage."""
 
-    def __init__(self, state: AgentState, llm_provider: Any = None) -> None:
+    def __init__(self, state: AgentState, llm_provider: Any = None, llm_logger: Any = None, tool_logger: Any = None) -> None:
         state.role = "root"
-        super().__init__(state, llm_provider)
+        super().__init__(state, llm_provider, llm_logger=llm_logger, tool_logger=tool_logger)
         self._split_threshold: int = 50
 
 
