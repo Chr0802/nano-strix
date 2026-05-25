@@ -139,6 +139,7 @@ def create_agent(
             agent_name=name,
             parent_id=parent_id,
             task=task,
+            task_id=agent_state.task_id,
             max_iterations=agent_state.max_iterations,
             waiting_timeout=agent_state.waiting_timeout,
         )
