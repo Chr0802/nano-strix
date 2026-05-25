@@ -87,7 +87,7 @@ def test_tool_logger(tmp_path: Path):
         "per_file",
         "read_file",
         {"path": "src/a.py"},
-        1523,
+        {"content": "file content here", "lines": 100},
         5.0,
     )
 
@@ -96,3 +96,5 @@ def test_tool_logger(tmp_path: Path):
     data = json.loads(lines[0])
     assert data["event"] == "tool_execution"
     assert data["data"]["tool"] == "read_file"
+    assert data["data"]["result"] == {"content": "file content here", "lines": 100}
+    assert data["data"]["result_chars"] > 0

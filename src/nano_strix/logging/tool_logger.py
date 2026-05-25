@@ -16,9 +16,10 @@ class ToolLogger:
         stage: str,
         tool: str,
         arguments: dict[str, Any],
-        result_chars: int,
+        result: Any,
         duration_ms: float,
     ) -> None:
+        result_str = str(result)
         self._logger.write(
             LogEntry(
                 task_id=task_id,
@@ -29,7 +30,8 @@ class ToolLogger:
                 data={
                     "tool": tool,
                     "arguments": arguments,
-                    "result_chars": result_chars,
+                    "result": result,
+                    "result_chars": len(result_str),
                 },
                 duration=duration_ms / 1000,
             )
