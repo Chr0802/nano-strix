@@ -240,6 +240,12 @@ class StageScheduler:
         )
         task_workspace = self._task_dir(state.task_id)
 
+        stage_payload = {
+            "target": str(target_in_workspace),
+            "workspace": str(task_workspace),
+            "stage_results": state.stage_results,
+        }
+
         state.advance(stage)
         self._event_bus.update_state(state)
         self._event_bus.publish(
@@ -247,6 +253,7 @@ class StageScheduler:
                 task_id=state.task_id,
                 event_type="stage_started",
                 stage=stage,
+                payload=stage_payload,
             )
         )
 
@@ -257,19 +264,13 @@ class StageScheduler:
             self._event_bus.update_state(state)
             return {"error": error}
 
-        payload = {
-            "target": str(target_in_workspace),
-            "workspace": str(task_workspace),
-            "stage_results": state.stage_results,
-        }
-
         last_error = None
         for attempt in range(max_retries + 1):
             result = await self._agent_manager.dispatch(
                 agent_script=agent_script,
                 task_id=state.task_id,
                 stage=stage,
-                payload=payload,
+                payload=stage_payload,
             )
 
             if "error" not in result:
