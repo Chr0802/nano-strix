@@ -19,13 +19,11 @@ from typing import Any
 from nano_strix.agents.deep_analysis_lib.deep_agent import RootAgent
 from nano_strix.agents.deep_analysis_lib.graph import (
     AgentState,
-    create_agent,
-    wait_for_message,
-    send_message_to_agent,
-    agent_finish,
-    view_agent_graph,
     _agent_graph,
     _running_agents,
+    set_graph_logger,
+    set_llm_logger,
+    set_tool_logger,
 )
 from nano_strix.agents.deep_analysis_lib.manifest import FileManifest
 from nano_strix.config.loader import load_config
@@ -35,23 +33,9 @@ from nano_strix.logging.setup import setup_logging
 from nano_strix.logging.llm_logger import LLMLogger
 from nano_strix.logging.tool_logger import ToolLogger
 from nano_strix.logging.graph_logger import GraphLogger
-from nano_strix.agents.deep_analysis_lib.graph import (
-    set_graph_logger,
-    set_llm_logger,
-    set_tool_logger,
-)
-from nano_strix.tools.context import set_current_workspace_root
+from nano_strix.tools.context import set_current_workspace_root, set_current_sandbox
 
 logger = logging.getLogger(__name__)
-
-# Register graph tools for LLM access
-from nano_strix.tools.registry import register_tool
-
-create_agent_tool = register_tool(create_agent)
-send_message_tool = register_tool(send_message_to_agent)
-wait_message_tool = register_tool(wait_for_message)
-agent_finish_tool = register_tool(agent_finish)
-view_graph_tool = register_tool(view_agent_graph)
 
 
 def parse_ipc_input(raw: str) -> tuple[str, dict[str, Any]]:
@@ -142,12 +126,35 @@ def main() -> None:
             task=root_state.task,
         )
 
-        # Run root agent (synchronous wrapper for the async agent_loop)
+        # Run root agent inside Docker sandbox if configured
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
+        sandbox = None
         try:
+            if config.sandbox.sandbox_type == "docker":
+                try:
+                    from nano_strix.sandbox.docker import DockerSandbox
+                    sandbox = DockerSandbox(
+                        image=config.sandbox.image,
+                        network=config.sandbox.network,
+                        source_dir=Path(workspace_root),
+                    )
+                    loop.run_until_complete(sandbox.create())
+                    set_current_sandbox(sandbox)
+                    logger.info("Docker sandbox started on %s", sandbox.tool_server_url)
+                except Exception:
+                    logger.warning(
+                        "Failed to create Docker sandbox, falling back to host tools",
+                        exc_info=True,
+                    )
+
             result = loop.run_until_complete(root_agent.agent_loop())
         finally:
+            if sandbox:
+                try:
+                    loop.run_until_complete(sandbox.destroy())
+                except Exception:
+                    logger.warning("Failed to destroy sandbox", exc_info=True)
             loop.close()
 
         # Wait for any remaining sub-agents
