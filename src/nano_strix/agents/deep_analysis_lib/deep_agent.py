@@ -125,6 +125,10 @@ class DeepAnalyseAgent:
         import time as _time
         from nano_strix.tools.executor import execute_tool_with_validation
         from nano_strix.tools.registry import get_tool_by_name
+        from nano_strix.tools.context import set_current_agent_state
+
+        # Inject current agent state so graph tools can resolve it automatically
+        set_current_agent_state(self.state)
 
         messages = [{"role": "system", "content": self._system_prompt}] + self.state.get_conversation_history()
         tools = self._get_tools()

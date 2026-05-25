@@ -41,6 +41,19 @@ def set_current_workspace_root(root: str) -> None:
     current_workspace_root.set(root)
 
 
+current_agent_state: ContextVar[Any] = ContextVar("current_agent_state", default=None)
+
+
+def get_current_agent_state() -> Any:
+    """Return the current agent's AgentState, or None if not in an agent context."""
+    return current_agent_state.get()
+
+
+def set_current_agent_state(state: Any) -> None:
+    """Set the current agent's AgentState for graph tool injection."""
+    current_agent_state.set(state)
+
+
 def resolve_and_validate_path(path: str) -> Path:
     """Resolve *path* and verify it is within the current workspace root.
 

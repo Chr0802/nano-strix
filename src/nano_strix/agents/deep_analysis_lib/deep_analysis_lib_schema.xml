@@ -2,9 +2,6 @@
   <tool name="create_agent">
     <description>Create and spawn a new agent to handle a specific subtask. The new agent runs on a separate daemon thread and inherits parent context by default.</description>
     <parameters>
-      <parameter name="agent_state" type="string" required="true">
-        <description>Internal agent state reference (injected automatically)</description>
-      </parameter>
       <parameter name="task" type="string" required="true">
         <description>The specific task/objective for the new agent</description>
       </parameter>
@@ -19,9 +16,6 @@
   <tool name="send_message_to_agent">
     <description>Send a message to another agent for coordination.</description>
     <parameters>
-      <parameter name="agent_state" type="string" required="true">
-        <description>Internal agent state reference</description>
-      </parameter>
       <parameter name="target_agent_id" type="string" required="true">
         <description>ID of the target agent</description>
       </parameter>
@@ -39,9 +33,6 @@
   <tool name="wait_for_message">
     <description>Pause the agent loop until receiving a message from another agent. IMPORTANT: Only use when sub-agents are actively running.</description>
     <parameters>
-      <parameter name="agent_state" type="string" required="true">
-        <description>Internal agent state reference</description>
-      </parameter>
       <parameter name="reason" type="string" required="false">
         <description>Explanation for why the agent is waiting</description>
       </parameter>
@@ -50,9 +41,6 @@
   <tool name="agent_finish">
     <description>Mark a subagent's task as completed and report results to parent agent. Can ONLY be used by subagents (agents with a parent).</description>
     <parameters>
-      <parameter name="agent_state" type="string" required="true">
-        <description>Internal agent state reference</description>
-      </parameter>
       <parameter name="result_summary" type="string" required="true">
         <description>Summary of what was accomplished</description>
       </parameter>
@@ -73,9 +61,6 @@
   <tool name="view_agent_graph">
     <description>View the current agent graph showing all agents, their relationships, and status.</description>
     <parameters>
-      <parameter name="agent_state" type="string" required="true">
-        <description>Internal agent state reference</description>
-      </parameter>
     </parameters>
   </tool>
 </tools>

@@ -7,6 +7,22 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from nano_strix.tools.registry import register_tool
+
+
+def _resolve_agent_state(agent_state: Any = None) -> Any:
+    """Return *agent_state* if provided, otherwise resolve from the current agent context."""
+    if agent_state is not None:
+        return agent_state
+    from nano_strix.tools.context import get_current_agent_state
+    state = get_current_agent_state()
+    if state is None:
+        raise RuntimeError(
+            "No agent_state provided and no current agent context set. "
+            "Graph tools must be called from within an agent loop."
+        )
+    return state
+
 
 # ---- AgentState ----
 
@@ -164,13 +180,15 @@ def _now_iso() -> str:
 # ---- Five Core Graph Primitives ----
 
 
+@register_tool
 def create_agent(
-    agent_state: AgentState,
-    task: str,
-    name: str,
+    agent_state: AgentState | None = None,
+    task: str = "",
+    name: str = "",
     inherit_context: bool = True,
 ) -> dict[str, Any]:
     """Create and spawn a new agent as a daemon thread."""
+    agent_state = _resolve_agent_state(agent_state)
     try:
         parent_id = agent_state.agent_id
 
@@ -305,14 +323,16 @@ def create_agent(
         }
 
 
+@register_tool
 def send_message_to_agent(
-    agent_state: AgentState,
-    target_agent_id: str,
-    message: str,
+    agent_state: AgentState | None = None,
+    target_agent_id: str = "",
+    message: str = "",
     message_type: str = "information",
     priority: str = "normal",
 ) -> dict[str, Any]:
     """Send a message to another agent's inbox."""
+    agent_state = _resolve_agent_state(agent_state)
     try:
         sender_id = agent_state.agent_id
 
@@ -383,11 +403,13 @@ def send_message_to_agent(
         }
 
 
+@register_tool
 def wait_for_message(
-    agent_state: AgentState,
+    agent_state: AgentState | None = None,
     reason: str = "Waiting for messages from other agents",
 ) -> dict[str, Any]:
     """Put the agent into waiting state until messages arrive."""
+    agent_state = _resolve_agent_state(agent_state)
     try:
         agent_id = agent_state.agent_id
         agent_name = agent_state.agent_name
@@ -427,15 +449,17 @@ def wait_for_message(
         }
 
 
+@register_tool
 def agent_finish(
-    agent_state: AgentState,
-    result_summary: str,
+    agent_state: AgentState | None = None,
+    result_summary: str = "",
     findings: list[str] | None = None,
     success: bool = True,
     report_to_parent: bool = True,
     final_recommendations: list[str] | None = None,
 ) -> dict[str, Any]:
     """Complete the agent and optionally report to parent."""
+    agent_state = _resolve_agent_state(agent_state)
     try:
         if agent_state.parent_id is None:
             return {
@@ -549,8 +573,10 @@ def agent_finish(
         }
 
 
-def view_agent_graph(agent_state: AgentState) -> dict[str, Any]:
+@register_tool
+def view_agent_graph(agent_state: AgentState | None = None) -> dict[str, Any]:
     """Return a text view of the current agent tree."""
+    agent_state = _resolve_agent_state(agent_state)
     try:
         lines = ["=== AGENT GRAPH ==="]
 
