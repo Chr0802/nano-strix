@@ -3,13 +3,28 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from nano_strix.tools.context import (
+    get_current_workspace_root,
+    resolve_and_validate_path,
+)
 from nano_strix.tools.registry import register_tool
+
+
+def _safe_path(path: str) -> Path:
+    """Resolve *path* safely within the workspace root if one is configured.
+
+    When no workspace root is set (e.g. in tests or CLI tools), the raw
+    path is used as-is for backward compatibility.
+    """
+    if get_current_workspace_root() is not None:
+        return resolve_and_validate_path(path)
+    return Path(path)
 
 
 @register_tool
 def file_read(path: str, max_lines: int = 1000) -> dict[str, Any]:
     try:
-        p = Path(path)
+        p = _safe_path(path)
         if not p.exists():
             return {"error": f"File not found: {path}"}
         if not p.is_file():
@@ -24,6 +39,8 @@ def file_read(path: str, max_lines: int = 1000) -> dict[str, Any]:
             result["truncated"] = True
             result["shown_lines"] = max_lines
         return result
+    except PermissionError as e:
+        return {"error": str(e), "path": path}
     except Exception as e:
         return {"error": str(e), "path": path}
 
@@ -31,10 +48,12 @@ def file_read(path: str, max_lines: int = 1000) -> dict[str, Any]:
 @register_tool
 def file_write(path: str, content: str) -> dict[str, Any]:
     try:
-        p = Path(path)
+        p = _safe_path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content)
         return {"path": str(p), "bytes_written": len(content.encode())}
+    except PermissionError as e:
+        return {"error": str(e), "path": path}
     except Exception as e:
         return {"error": str(e), "path": path}
 
@@ -42,7 +61,7 @@ def file_write(path: str, content: str) -> dict[str, Any]:
 @register_tool
 def directory_list(path: str, recursive: bool = False) -> dict[str, Any]:
     try:
-        p = Path(path)
+        p = _safe_path(path)
         if not p.exists():
             return {"error": f"Path not found: {path}"}
         if not p.is_dir():
@@ -69,6 +88,8 @@ def directory_list(path: str, recursive: bool = False) -> dict[str, Any]:
                 )
 
         return {"path": str(p), "entries": entries, "count": len(entries)}
+    except PermissionError as e:
+        return {"error": str(e), "path": path}
     except Exception as e:
         return {"error": str(e), "path": path}
 
@@ -76,7 +97,7 @@ def directory_list(path: str, recursive: bool = False) -> dict[str, Any]:
 @register_tool
 def file_search(path: str, pattern: str) -> dict[str, Any]:
     try:
-        p = Path(path)
+        p = _safe_path(path)
         if not p.exists():
             return {"error": f"Path not found: {path}"}
 
@@ -87,5 +108,7 @@ def file_search(path: str, pattern: str) -> dict[str, Any]:
             "matches": matches,
             "count": len(matches),
         }
+    except PermissionError as e:
+        return {"error": str(e), "path": path, "pattern": pattern}
     except Exception as e:
         return {"error": str(e), "path": path, "pattern": pattern}

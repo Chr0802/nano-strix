@@ -5,10 +5,18 @@ from typing import Any
 
 ROLE_TEMPLATE = _COMMON_TEMPLATE = Template("""You are $role_name, a specialized security analysis agent.
 Your task domain: $role_description
+Your target directory: $target_directory
 
 <core_capabilities>
 $capabilities
 </core_capabilities>
+
+<workspace_restriction>
+ALL file operations (file_read, directory_list, file_search, file_write) are
+STRICTLY confined to your target directory. Any attempt to read or access paths
+outside this directory will be blocked. You MUST operate ONLY within the target
+directory tree. When discovering files, always start from the target directory.
+</workspace_restriction>
 
 <communication_rules>
 - Work autonomously on your assigned task
@@ -114,12 +122,16 @@ _TOOL_SETS: dict[str, str] = {
 
 
 def build_system_prompt(role: str) -> str:
+    from nano_strix.tools.context import get_current_workspace_root
+
     rd = ROLE_DEFINITIONS[role]
+    target_dir = get_current_workspace_root() or "(not set)"
     return _COMMON_TEMPLATE.substitute(
         role_name=rd["name"],
         role_description=rd["description"],
         capabilities=rd["capabilities"],
         tool_descriptions=_TOOL_SETS.get(role, ""),
+        target_directory=target_dir,
     )
 
 

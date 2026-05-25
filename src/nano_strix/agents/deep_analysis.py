@@ -40,6 +40,7 @@ from nano_strix.agents.deep_analysis_lib.graph import (
     set_llm_logger,
     set_tool_logger,
 )
+from nano_strix.tools.context import set_current_workspace_root
 
 logger = logging.getLogger(__name__)
 
@@ -80,13 +81,19 @@ def main() -> None:
 
     task_id, payload = parse_ipc_input(raw_input)
     target = payload.get("target", "")
+    workspace = payload.get("workspace", "")
+
+    # Restrict file operations to the task workspace
+    workspace_root = workspace or target or "."
+    set_current_workspace_root(str(Path(workspace_root).resolve()))
+    logger.debug("Workspace root set to: %s", workspace_root)
 
     # Setup logging
     config = load_config(DEFAULT_CONFIG_PATH)
     setup_logging(config.logging)
 
     # Create structured JSONL loggers for this task
-    logs_dir = Path(payload.get("workspace", ".")) / "logs"
+    logs_dir = Path(workspace or ".") / "logs"
     llm_logger = LLMLogger(logs_dir / "llm.jsonl")
     tool_logger = ToolLogger(logs_dir / "tools.jsonl")
     graph_logger = GraphLogger(logs_dir / "graph.jsonl", task_id=task_id)
