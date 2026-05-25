@@ -111,6 +111,14 @@ _agent_instances: dict[str, Any] = {}
 _agent_states: dict[str, Any] = {}
 _agent_graph_lock = threading.Lock()
 
+_graph_logger: Any = None
+
+
+def set_graph_logger(logger: Any) -> None:
+    """Set the GraphLogger instance for the current task."""
+    global _graph_logger
+    _graph_logger = logger
+
 
 # ---- Helpers ----
 
@@ -195,6 +203,14 @@ def create_agent(
             _agent_graph["edges"].append(delegation_edge)
 
             _agent_messages[child_state.agent_id] = []
+
+        if _graph_logger:
+            _graph_logger.log_agent_created(
+                agent_id=child_state.agent_id,
+                parent_id=parent_id,
+                name=name,
+                task=task,
+            )
 
         child_state.add_message("user", delegation_xml)
 
@@ -301,6 +317,15 @@ def send_message_to_agent(
         if target_state is not None and target_state.waiting_for_input:
             target_state.signal_wake()
 
+        if _graph_logger:
+            _graph_logger.log_message_sent(
+                from_id=sender_id,
+                to_id=target_agent_id,
+                msg_id=msg_data["id"],
+                msg_type=message_type,
+                priority=priority,
+            )
+
         sender_name = _agent_graph["nodes"].get(sender_id, {}).get("name", agent_state.agent_name)
         target_name = _agent_graph["nodes"][target_agent_id]["name"]
 
@@ -334,6 +359,14 @@ def wait_for_message(
         if agent_id in _agent_graph["nodes"]:
             _agent_graph["nodes"][agent_id]["status"] = "waiting"
             _agent_graph["nodes"][agent_id]["waiting_reason"] = reason
+
+        if _graph_logger:
+            _graph_logger.log_agent_status_change(
+                agent_id=agent_id,
+                old_status="running",
+                new_status="waiting",
+                reason=reason,
+            )
 
     except Exception as e:
         return {"success": False, "error": f"Failed to enter waiting state: {e}", "status": "error"}
@@ -387,6 +420,14 @@ def agent_finish(
 
         agent_node["status"] = "finished" if success else "failed"
         agent_node["finished_at"] = _now_iso()
+
+        if _graph_logger:
+            _graph_logger.log_agent_finished(
+                agent_id=agent_id,
+                success=success,
+                findings_count=len(findings),
+                result_summary=result_summary,
+            )
         agent_node["result"] = {
             "summary": result_summary,
             "findings": findings,
