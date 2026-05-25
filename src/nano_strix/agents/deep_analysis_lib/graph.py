@@ -120,6 +120,11 @@ def set_graph_logger(logger: Any) -> None:
     _graph_logger = logger
 
 
+def get_graph_logger() -> Any:
+    """Return the current GraphLogger instance, or None."""
+    return _graph_logger
+
+
 # ---- Helpers ----
 
 def _generate_message_id() -> str:
