@@ -98,3 +98,18 @@ class GraphLogger:
                 "result_summary": result_summary,
             },
         )
+
+    def log_graph_viewed(
+        self,
+        agent_id: str,
+        node_count: int,
+        edge_count: int,
+    ) -> None:
+        self._write(
+            "graph_viewed",
+            {
+                "agent_id": agent_id,
+                "node_count": node_count,
+                "edge_count": edge_count,
+            },
+        )

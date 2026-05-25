@@ -596,6 +596,13 @@ def view_agent_graph(agent_state: AgentState) -> dict[str, Any]:
             "failed": statuses.count("failed"),
         }
 
+        if _graph_logger:
+            _graph_logger.log_graph_viewed(
+                agent_id=agent_state.agent_id,
+                node_count=summary["total"],
+                edge_count=len(_agent_graph["edges"]),
+            )
+
     except Exception as e:
         return {"error": f"Failed to view agent graph: {e}", "graph_structure": "Error"}
     else:

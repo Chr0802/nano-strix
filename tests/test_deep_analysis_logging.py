@@ -134,3 +134,39 @@ def test_agent_does_not_crash_when_logger_fails(tmp_path: Path, monkeypatch):
 
     # Agent should complete despite logger failure
     assert result is not None
+
+
+def test_agent_does_not_crash_when_tool_logger_fails(tmp_path: Path, monkeypatch):
+    """Agent loop completes even when ToolLogger._logger.write raises an exception."""
+    logs_dir = tmp_path / "logs"
+    logs_dir.mkdir(parents=True)
+
+    llm_logger = LLMLogger(logs_dir / "llm.jsonl")
+    tool_logger = ToolLogger(logs_dir / "tools.jsonl")
+    monkeypatch.setattr(tool_logger._logger, "write", lambda entry: (_ for _ in ()).throw(RuntimeError("disk full")))
+
+    state = AgentState(
+        agent_name="TestAgent",
+        task="test task",
+        task_id="t-test",
+        role="analyze",
+        max_iterations=3,
+    )
+
+    fake_llm = FakeLLMWithToolCalls()
+    agent = DeepAnalyseAgent(
+        state=state,
+        llm_provider=fake_llm,
+        llm_logger=llm_logger,
+        tool_logger=tool_logger,
+    )
+
+    import asyncio
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        result = loop.run_until_complete(agent.agent_loop())
+    finally:
+        loop.close()
+
+    assert result is not None

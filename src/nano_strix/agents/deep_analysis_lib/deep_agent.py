@@ -158,7 +158,7 @@ class DeepAnalyseAgent:
                 self._llm_logger.log_response_full(
                     task_id=self.state.task_id,
                     stage="deep_analysis",
-                    model=response.model or model_name,
+                    model=response.model or model_name or "unknown",
                     content=response.content,
                     tool_calls=[
                         {"id": tc.id, "name": tc.name, "arguments": tc.arguments}
@@ -268,6 +268,19 @@ class DeepAnalyseAgent:
 
         if has_new and not self.state.waiting_for_input:
             if agent_id in _agent_graph["nodes"]:
+                old_status = _agent_graph["nodes"][agent_id]["status"]
+                if old_status != "running":
+                    logger.warning(
+                        "Agent %s status unexpectedly %s, resetting to running",
+                        agent_id, old_status,
+                    )
+                    if get_graph_logger():
+                        get_graph_logger().log_agent_status_change(
+                            agent_id=agent_id,
+                            old_status=old_status,
+                            new_status="running",
+                            reason="Status reset after receiving messages",
+                        )
                 _agent_graph["nodes"][agent_id]["status"] = "running"
 
     def _get_tools(self) -> list[dict[str, Any]]:

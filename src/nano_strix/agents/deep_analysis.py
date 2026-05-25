@@ -127,6 +127,14 @@ def main() -> None:
             tool_logger=tool_logger,
         )
 
+        # Emit root agent creation event (child agents are logged by create_agent)
+        graph_logger.log_agent_created(
+            agent_id=root_state.agent_id,
+            parent_id=None,
+            name=root_state.agent_name,
+            task=root_state.task,
+        )
+
         # Run root agent (synchronous wrapper for the async agent_loop)
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)

@@ -46,7 +46,7 @@ class LLMLogger:
                 task_id=task_id,
                 stage=stage,
                 category="llm",
-                level="debug",
+                level="info",
                 event="llm_request_full",
                 data={
                     "model": model,
