@@ -38,6 +38,18 @@ from nano_strix.tools.context import set_current_workspace_root, set_current_san
 logger = logging.getLogger(__name__)
 
 
+def _docker_is_available() -> bool:
+    """Quick check that Docker daemon is reachable without blocking."""
+    try:
+        import docker
+        client = docker.DockerClient(base_url="unix:///var/run/docker.sock", timeout=3)
+        client.ping()
+        client.close()
+        return True
+    except Exception:
+        return False
+
+
 def parse_ipc_input(raw: str) -> tuple[str, dict[str, Any]]:
     data = _json.loads(raw)
     return data["task_id"], data.get("payload", {})
@@ -126,27 +138,36 @@ def main() -> None:
             task=root_state.task,
         )
 
-        # Run root agent inside Docker sandbox if configured
+        # Run root agent inside Docker sandbox if configured and available
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         sandbox = None
         try:
             if config.sandbox.sandbox_type == "docker":
-                try:
-                    from nano_strix.sandbox.docker import DockerSandbox
-                    sandbox = DockerSandbox(
-                        image=config.sandbox.image,
-                        network=config.sandbox.network,
-                        source_dir=Path(workspace_root),
-                    )
-                    loop.run_until_complete(sandbox.create())
-                    set_current_sandbox(sandbox)
-                    logger.info("Docker sandbox started on %s", sandbox.tool_server_url)
-                except Exception:
-                    logger.warning(
-                        "Failed to create Docker sandbox, falling back to host tools",
-                        exc_info=True,
-                    )
+                if _docker_is_available():
+                    try:
+                        from nano_strix.sandbox.docker import DockerSandbox
+                        sandbox = DockerSandbox(
+                            image=config.sandbox.image,
+                            network=config.sandbox.network,
+                            source_dir=Path(workspace_root),
+                        )
+                        loop.run_until_complete(
+                            asyncio.wait_for(sandbox.create(), timeout=120)
+                        )
+                        set_current_sandbox(sandbox)
+                        logger.info("Docker sandbox started on %s", sandbox.tool_server_url)
+                    except asyncio.TimeoutError:
+                        logger.warning("Docker sandbox creation timed out, falling back to host tools")
+                        sandbox = None
+                    except Exception:
+                        logger.warning(
+                            "Failed to create Docker sandbox, falling back to host tools",
+                            exc_info=True,
+                        )
+                        sandbox = None
+                else:
+                    logger.info("Docker not available, using host tools directly")
 
             result = loop.run_until_complete(root_agent.agent_loop())
         finally:
