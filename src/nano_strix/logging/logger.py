@@ -31,14 +31,22 @@ class LogEntry:
                 "duration": self.duration,
             },
             ensure_ascii=False,
+            default=repr,  # handles non-serializable objects
         )
 
 
 class JSONLLogger:
     def __init__(self, path: Path) -> None:
         self._path = path
-        self._path.parent.mkdir(parents=True, exist_ok=True)
 
     def write(self, entry: LogEntry) -> None:
-        with open(self._path, "a") as f:
-            f.write(entry.to_json() + "\n")
+        try:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            with open(self._path, "a") as f:
+                f.write(entry.to_json() + "\n")
+        except Exception:
+            import logging
+            logging.warning(
+                "JSONLLogger: failed to write log entry task=%s event=%s",
+                entry.task_id, entry.event,
+            )

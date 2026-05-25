@@ -98,3 +98,88 @@ def test_tool_logger(tmp_path: Path):
     assert data["data"]["tool"] == "read_file"
     assert data["data"]["result"] == {"content": "file content here", "lines": 100}
     assert data["data"]["result_chars"] > 0
+
+
+def test_graph_logger_agent_created(tmp_path: Path):
+    from nano_strix.logging.graph_logger import GraphLogger
+
+    log_file = tmp_path / "graph.jsonl"
+    logger = GraphLogger(log_file, task_id="t-001", stage="deep_analysis")
+    logger.log_agent_created(
+        agent_id="agent_abc123",
+        parent_id="agent_root",
+        name="Scanner-1",
+        task="Scan files for vulnerabilities",
+    )
+
+    lines = log_file.read_text().strip().split("\n")
+    assert len(lines) == 1
+    data = json.loads(lines[0])
+    assert data["task_id"] == "t-001"
+    assert data["stage"] == "deep_analysis"
+    assert data["category"] == "graph"
+    assert data["event"] == "agent_created"
+    assert data["data"]["agent_id"] == "agent_abc123"
+    assert data["data"]["parent_id"] == "agent_root"
+    assert data["data"]["name"] == "Scanner-1"
+
+
+def test_graph_logger_status_change(tmp_path: Path):
+    from nano_strix.logging.graph_logger import GraphLogger
+
+    log_file = tmp_path / "graph.jsonl"
+    logger = GraphLogger(log_file, task_id="t-001")
+    logger.log_agent_status_change(
+        agent_id="agent_abc123",
+        old_status="running",
+        new_status="waiting",
+        reason="Waiting for cross-file analysis results",
+    )
+
+    lines = log_file.read_text().strip().split("\n")
+    assert len(lines) == 1
+    data = json.loads(lines[0])
+    assert data["event"] == "agent_status_change"
+    assert data["data"]["old_status"] == "running"
+    assert data["data"]["new_status"] == "waiting"
+
+
+def test_graph_logger_message_sent(tmp_path: Path):
+    from nano_strix.logging.graph_logger import GraphLogger
+
+    log_file = tmp_path / "graph.jsonl"
+    logger = GraphLogger(log_file, task_id="t-001")
+    logger.log_message_sent(
+        from_id="agent_abc",
+        to_id="agent_def",
+        msg_id="msg_123",
+        msg_type="information",
+        priority="high",
+    )
+
+    lines = log_file.read_text().strip().split("\n")
+    assert len(lines) == 1
+    data = json.loads(lines[0])
+    assert data["event"] == "message_sent"
+    assert data["data"]["from"] == "agent_abc"
+    assert data["data"]["to"] == "agent_def"
+
+
+def test_graph_logger_agent_finished(tmp_path: Path):
+    from nano_strix.logging.graph_logger import GraphLogger
+
+    log_file = tmp_path / "graph.jsonl"
+    logger = GraphLogger(log_file, task_id="t-001")
+    logger.log_agent_finished(
+        agent_id="agent_abc123",
+        success=True,
+        findings_count=3,
+        result_summary="Found 3 vulnerabilities",
+    )
+
+    lines = log_file.read_text().strip().split("\n")
+    assert len(lines) == 1
+    data = json.loads(lines[0])
+    assert data["event"] == "agent_finished"
+    assert data["data"]["success"] is True
+    assert data["data"]["findings_count"] == 3
