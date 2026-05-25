@@ -16,6 +16,7 @@ class AgentState:
     agent_name: str = "DeepAnalyseAgent"
     parent_id: str | None = None
     task: str = ""
+    task_id: str = ""
     role: str = ""  # classify / scan / analyze / cross-link / review / root
     messages: list[dict[str, Any]] = field(default_factory=list)
     iteration: int = 0

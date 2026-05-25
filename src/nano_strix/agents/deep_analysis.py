@@ -96,6 +96,7 @@ def main() -> None:
         # Create RootAgent state
         root_state = AgentState(
             agent_name="DeepAnalysisRoot",
+            task_id=task_id,
             task=f"Orchestrate deep analysis of target: {target}",
             role="root",
             max_iterations=500,
