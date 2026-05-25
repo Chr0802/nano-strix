@@ -50,6 +50,30 @@ def _docker_is_available() -> bool:
         return False
 
 
+async def _heartbeat_loop(root_state: Any) -> None:
+    """Emit heartbeat lines to stdout while the agent loop is running.
+
+    The heartbeat allows the orchestrator to detect that this subprocess
+    is still making progress (not stuck), even when the agent loop runs
+    for a long time.
+    """
+    HEARTBEAT_INTERVAL = 30  # seconds
+    while True:
+        await asyncio.sleep(HEARTBEAT_INTERVAL)
+        try:
+            from nano_strix.agents.deep_analysis_lib.graph import _agent_graph
+            hb = _json.dumps({
+                "type": "heartbeat",
+                "ts": _time.time(),
+                "iteration": root_state.iteration,
+                "agent_count": len(_agent_graph["nodes"]),
+            })
+            sys.stdout.write(hb + "\n")
+            sys.stdout.flush()
+        except Exception:
+            pass  # heartbeat must never crash the agent loop
+
+
 def parse_ipc_input(raw: str) -> tuple[str, dict[str, Any]]:
     data = _json.loads(raw)
     return data["task_id"], data.get("payload", {})
@@ -142,6 +166,7 @@ def main() -> None:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         sandbox = None
+        heartbeat_task: asyncio.Task | None = None
         try:
             if config.sandbox.sandbox_type == "docker":
                 if _docker_is_available():
@@ -171,8 +196,13 @@ def main() -> None:
                 else:
                     logger.info("Docker not available, using host tools directly")
 
+            # Start heartbeat so the orchestrator can detect liveness
+            heartbeat_task = loop.create_task(_heartbeat_loop(root_state))
+
             result = loop.run_until_complete(root_agent.agent_loop())
         finally:
+            if heartbeat_task is not None:
+                heartbeat_task.cancel()
             if sandbox:
                 try:
                     loop.run_until_complete(sandbox.destroy())
