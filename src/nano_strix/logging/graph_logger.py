@@ -52,6 +52,8 @@ class GraphLogger:
         old_status: str,
         new_status: str,
         reason: str = "",
+        stage_name: str = "",
+        checkpoint_detail: str = "",
     ) -> None:
         self._write(
             "agent_status_change",
@@ -60,6 +62,8 @@ class GraphLogger:
                 "old_status": old_status,
                 "new_status": new_status,
                 "reason": reason,
+                "stage_name": stage_name,
+                "checkpoint_detail": checkpoint_detail,
             },
         )
 
@@ -88,6 +92,8 @@ class GraphLogger:
         success: bool,
         findings_count: int,
         result_summary: str,
+        validation_result: str = "",
+        schema_errors: list[str] | None = None,
     ) -> None:
         self._write(
             "agent_finished",
@@ -96,6 +102,8 @@ class GraphLogger:
                 "success": success,
                 "findings_count": findings_count,
                 "result_summary": result_summary,
+                "validation_result": validation_result,
+                "schema_errors": schema_errors or [],
             },
         )
 
