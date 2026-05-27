@@ -26,6 +26,10 @@ from nano_strix.agents.deep_analysis_lib.graph import (
     set_tool_logger,
 )
 from nano_strix.agents.deep_analysis_lib.manifest import FileManifest
+from nano_strix.agents.deep_analysis_lib.stage_state import (
+    get_stage_state_manager,
+    reset_stage_state_manager,
+)
 from nano_strix.config.loader import load_config
 from nano_strix.config.paths import DEFAULT_CONFIG_PATH
 from nano_strix.llm.factory import create_provider
@@ -120,6 +124,11 @@ def main() -> None:
     set_graph_logger(graph_logger)
     set_llm_logger(llm_logger)
     set_tool_logger(tool_logger)
+
+    # Initialize harness stage state — contracts are auto-applied via hooks in graph.py
+    reset_stage_state_manager()
+    sm = get_stage_state_manager()
+    logger.debug("Harness initialized: stage state manager ready")
 
     logger.info("Deep analysis stage started: task=%s target=%s", task_id, target)
 
