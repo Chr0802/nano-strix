@@ -5,8 +5,17 @@ import threading
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
+from nano_strix.agents.deep_analysis_lib.hooks import (
+    RetryExhaustedError,
+    clear_hooks as _clear_harness_hooks,
+    register_hook as _register_harness_hook,
+    run_post_agent_finish,
+    run_pre_create_agent,
+    run_pre_root_finish,
+)
 from nano_strix.tools.registry import register_tool
 
 
@@ -167,6 +176,10 @@ def get_tool_logger() -> Any:
     return _tool_logger
 
 
+# Harness hook registration (re-exported from hooks.py)
+register_harness_hook = _register_harness_hook
+clear_harness_hooks = _clear_harness_hooks
+
 # ---- Helpers ----
 
 def _generate_message_id() -> str:
@@ -175,6 +188,55 @@ def _generate_message_id() -> str:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _notify_parent_of_completion(
+    agent_node: dict,
+    agent_id: str,
+    findings: list,
+    recommendations: list,
+    success: bool,
+) -> None:
+    """Send completion report message to parent agent."""
+    parent_id = agent_node.get("parent_id")
+    if not parent_id or parent_id not in _agent_graph["nodes"]:
+        return
+    findings_xml = "\n".join(f"        <finding>{f}</finding>" for f in findings)
+    recs_xml = "\n".join(f"        <recommendation>{r}</recommendation>" for r in recommendations)
+    report_message = f"""<agent_completion_report>
+    <agent_info>
+        <agent_name>{agent_node["name"]}</agent_name>
+        <agent_id>{agent_id}</agent_id>
+        <task>{agent_node["task"]}</task>
+        <status>{"SUCCESS" if success else "FAILED"}</status>
+        <completion_time>{agent_node.get("finished_at", _now_iso())}</completion_time>
+    </agent_info>
+    <results>
+        <summary>{agent_node.get("result", {}).get("summary", "")}</summary>
+        <findings>
+{findings_xml}
+        </findings>
+        <recommendations>
+{recs_xml}
+        </recommendations>
+    </results>
+</agent_completion_report>"""
+    if parent_id not in _agent_messages:
+        _agent_messages[parent_id] = []
+    _agent_messages[parent_id].append({
+        "id": f"report_{uuid.uuid4().hex[:8]}",
+        "from": agent_id,
+        "to": parent_id,
+        "content": report_message,
+        "message_type": "information",
+        "priority": "high",
+        "timestamp": _now_iso(),
+        "delivered": True,
+        "read": False,
+    })
+    parent_state = _agent_states.get(parent_id)
+    if parent_state is not None and parent_state.waiting_for_input:
+        parent_state.signal_wake()
 
 
 # ---- Five Core Graph Primitives ----
@@ -189,6 +251,23 @@ def create_agent(
 ) -> dict[str, Any]:
     """Create and spawn a new agent as a daemon thread."""
     agent_state = _resolve_agent_state(agent_state)
+
+    # --- harness pre-hook: validate stage input before creating agent ---
+    from nano_strix.tools.context import get_current_workspace_root
+    ws_root = get_current_workspace_root()
+    workspace_path = Path(ws_root) if ws_root else None
+    pre_result = run_pre_create_agent(
+        agent_name=name,
+        workspace_root=workspace_path,
+    )
+    if not pre_result.passed:
+        return {
+            "success": False,
+            "error": pre_result.to_message(),
+            "agent_id": None,
+        }
+    # --- end harness pre-hook ---
+
     try:
         parent_id = agent_state.agent_id
 
@@ -480,6 +559,74 @@ def agent_finish(
         findings = findings or []
         final_recommendations = final_recommendations or []
 
+        # --- harness post-hook: validate output before marking finished ---
+        agent_name = agent_node.get("name", agent_state.agent_name)
+        from nano_strix.tools.context import get_current_workspace_root
+        ws_root = get_current_workspace_root()
+        workspace_path = Path(ws_root) if ws_root else None
+
+        post_result = run_post_agent_finish(
+            agent_name=agent_name,
+            agent_id=agent_id,
+            findings=findings,
+            max_retries=3,
+            workspace_root=workspace_path,
+        )
+        if not post_result.passed:
+            if "ALL RETRIES EXHAUSTED" in post_result.to_message():
+                if _graph_logger:
+                    _graph_logger.log_agent_finished(
+                        agent_id=agent_id,
+                        success=False,
+                        findings_count=len(findings),
+                        result_summary=result_summary,
+                        validation_result="retry_exhausted",
+                        schema_errors=post_result.errors,
+                    )
+                agent_node["status"] = "failed"
+                agent_node["finished_at"] = _now_iso()
+                agent_node["result"] = {
+                    "summary": result_summary,
+                    "findings": findings,
+                    "success": False,
+                    "recommendations": final_recommendations or [],
+                    "harness_error": post_result.to_message(),
+                }
+                agent_state.final_result = agent_node["result"]
+                if report_to_parent and agent_node.get("parent_id"):
+                    _notify_parent_of_completion(
+                        agent_node, agent_id, findings, final_recommendations or [], False
+                    )
+                _running_agents.pop(agent_id, None)
+                return {
+                    "agent_completed": False,
+                    "parent_notified": report_to_parent,
+                    "completion_summary": {
+                        "agent_id": agent_id,
+                        "agent_name": agent_node["name"],
+                        "task": agent_node["task"],
+                        "success": False,
+                        "findings_count": len(findings),
+                        "harness_error": post_result.to_message(),
+                    },
+                }
+            else:
+                if _graph_logger:
+                    _graph_logger.log_agent_status_change(
+                        agent_id=agent_id,
+                        old_status="running",
+                        new_status="validating",
+                        reason=post_result.to_message(),
+                        stage_name=agent_name,
+                        checkpoint_detail="output validation failed, retry pending",
+                    )
+                return {
+                    "agent_completed": False,
+                    "error": post_result.to_message(),
+                    "parent_notified": False,
+                }
+        # --- end harness post-hook ---
+
         agent_node["status"] = "finished" if success else "failed"
         agent_node["finished_at"] = _now_iso()
 
@@ -497,57 +644,15 @@ def agent_finish(
             "recommendations": final_recommendations,
         }
 
+        # Also persist on agent_state so agent_loop returns findings to _run_agent_in_thread
+        agent_state.final_result = agent_node["result"]
+
         parent_notified = False
-        if report_to_parent and agent_node["parent_id"]:
-            parent_id = agent_node["parent_id"]
-
-            if parent_id in _agent_graph["nodes"]:
-                findings_xml = "\n".join(
-                    f"        <finding>{f}</finding>" for f in findings
-                )
-                recs_xml = "\n".join(
-                    f"        <recommendation>{r}</recommendation>" for r in final_recommendations
-                )
-
-                report_message = f"""<agent_completion_report>
-    <agent_info>
-        <agent_name>{agent_node["name"]}</agent_name>
-        <agent_id>{agent_id}</agent_id>
-        <task>{agent_node["task"]}</task>
-        <status>{"SUCCESS" if success else "FAILED"}</status>
-        <completion_time>{agent_node["finished_at"]}</completion_time>
-    </agent_info>
-    <results>
-        <summary>{result_summary}</summary>
-        <findings>
-{findings_xml}
-        </findings>
-        <recommendations>
-{recs_xml}
-        </recommendations>
-    </results>
-</agent_completion_report>"""
-
-                if parent_id not in _agent_messages:
-                    _agent_messages[parent_id] = []
-
-                _agent_messages[parent_id].append({
-                    "id": f"report_{uuid.uuid4().hex[:8]}",
-                    "from": agent_id,
-                    "to": parent_id,
-                    "content": report_message,
-                    "message_type": "information",
-                    "priority": "high",
-                    "timestamp": _now_iso(),
-                    "delivered": True,
-                    "read": False,
-                })
-
-                parent_state = _agent_states.get(parent_id)
-                if parent_state is not None and parent_state.waiting_for_input:
-                    parent_state.signal_wake()
-
-                parent_notified = True
+        if report_to_parent and agent_node.get("parent_id"):
+            _notify_parent_of_completion(
+                agent_node, agent_id, findings, final_recommendations or [], success
+            )
+            parent_notified = True
 
         _running_agents.pop(agent_id, None)
 
@@ -621,6 +726,28 @@ def view_agent_graph(agent_state: AgentState | None = None) -> dict[str, Any]:
             "finished": statuses.count("finished"),
             "failed": statuses.count("failed"),
         }
+
+        # --- harness: include stage progress ---
+        from nano_strix.agents.deep_analysis_lib.stage_state import get_stage_state_manager
+        sm = get_stage_state_manager()
+        stage_info = sm.to_dict()
+        if stage_info:
+            lines.append("")
+            lines.append("=== STAGE PROGRESS ===")
+            for sname, sdata in stage_info.items():
+                status_icon = {
+                    "completed": "DONE",
+                    "failed": "FAIL",
+                    "in_progress": "RUNNING",
+                    "validating": "VALIDATE",
+                    "pending": "PENDING",
+                }.get(sdata["status"], sdata["status"])
+                lines.append(
+                    f"  [{status_icon}] {sname} | agents={sdata['agent_count']} "
+                    f"| retries={sdata['retry_counts']} | last={sdata['last_checkpoint'][:60]}"
+                )
+        summary["stages"] = stage_info
+        # --- end harness ---
 
         if _graph_logger:
             _graph_logger.log_graph_viewed(
