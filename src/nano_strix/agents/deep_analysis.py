@@ -25,19 +25,15 @@ from nano_strix.agents.deep_analysis_lib.graph import (
     set_llm_logger,
     set_tool_logger,
 )
-from nano_strix.agents.deep_analysis_lib.manifest import FileManifest
-from nano_strix.agents.deep_analysis_lib.stage_state import (
-    get_stage_state_manager,
-    reset_stage_state_manager,
-)
+from nano_strix.agents.deep_analysis_lib.stage_state import reset_stage_state_manager
 from nano_strix.config.loader import load_config
 from nano_strix.config.paths import DEFAULT_CONFIG_PATH
 from nano_strix.llm.factory import create_provider
-from nano_strix.logging.setup import setup_logging
-from nano_strix.logging.llm_logger import LLMLogger
-from nano_strix.logging.tool_logger import ToolLogger
 from nano_strix.logging.graph_logger import GraphLogger
-from nano_strix.tools.context import set_current_workspace_root, set_current_sandbox
+from nano_strix.logging.llm_logger import LLMLogger
+from nano_strix.logging.setup import setup_logging
+from nano_strix.logging.tool_logger import ToolLogger
+from nano_strix.tools.context import set_current_sandbox, set_current_workspace_root
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +123,6 @@ def main() -> None:
 
     # Initialize harness stage state — contracts are auto-applied via hooks in graph.py
     reset_stage_state_manager()
-    sm = get_stage_state_manager()
     logger.debug("Harness initialized: stage state manager ready")
 
     logger.info("Deep analysis stage started: task=%s target=%s", task_id, target)
@@ -208,7 +203,7 @@ def main() -> None:
             # Start heartbeat so the orchestrator can detect liveness
             heartbeat_task = loop.create_task(_heartbeat_loop(root_state))
 
-            result = loop.run_until_complete(root_agent.agent_loop())
+            loop.run_until_complete(root_agent.agent_loop())
         finally:
             if heartbeat_task is not None:
                 heartbeat_task.cancel()
@@ -220,7 +215,6 @@ def main() -> None:
             loop.close()
 
         # Wait for any remaining sub-agents
-        import threading
         for agent_id, thread in list(_running_agents.items()):
             thread.join(timeout=30)
 

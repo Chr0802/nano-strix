@@ -82,8 +82,8 @@ def test_agent_logs_llm_and_tool_events(tmp_path: Path):
     assert req["event"] == "llm_request_full"
     assert req["task_id"] == "t-test"
     assert req["data"]["model"] == "test-model"
-    assert "messages" in req["data"]
-    assert len(req["data"]["messages"]) >= 1  # at least system prompt
+    assert "message" in req["data"]
+    assert isinstance(req["data"]["message"], dict)  # single message dict (last message)
 
     resp = json.loads(llm_lines[1])
     assert resp["event"] == "llm_response_full"

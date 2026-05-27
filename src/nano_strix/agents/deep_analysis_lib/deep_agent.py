@@ -217,7 +217,9 @@ class DeepAnalyseAgent:
 
                 self.state.add_message("user", f"Tool result ({tc.name}): {str(result)[:2000]}")
 
-                if tc.name == "agent_finish":
+                if tc.name == "agent_finish" and (
+                    result.get("agent_completed", False) or "completion_summary" in result
+                ):
                     should_finish = True
 
             return should_finish

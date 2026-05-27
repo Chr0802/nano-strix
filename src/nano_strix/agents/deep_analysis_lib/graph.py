@@ -9,13 +9,12 @@ from pathlib import Path
 from typing import Any
 
 from nano_strix.agents.deep_analysis_lib.hooks import (
-    RetryExhaustedError,
     clear_hooks as _clear_harness_hooks,
     register_hook as _register_harness_hook,
     run_post_agent_finish,
     run_pre_create_agent,
-    run_pre_root_finish,
 )
+from nano_strix.agents.deep_analysis_lib.stage_state import get_stage_state_manager
 from nano_strix.tools.registry import register_tool
 
 
@@ -255,17 +254,17 @@ def create_agent(
     # --- harness pre-hook: validate stage input before creating agent ---
     from nano_strix.tools.context import get_current_workspace_root
     ws_root = get_current_workspace_root()
-    workspace_path = Path(ws_root) if ws_root else None
-    pre_result = run_pre_create_agent(
-        agent_name=name,
-        workspace_root=workspace_path,
-    )
-    if not pre_result.passed:
-        return {
-            "success": False,
-            "error": pre_result.to_message(),
-            "agent_id": None,
-        }
+    if ws_root is not None:
+        pre_result = run_pre_create_agent(
+            agent_name=name,
+            workspace_root=Path(ws_root),
+        )
+        if not pre_result.passed:
+            return {
+                "success": False,
+                "error": pre_result.to_message(),
+                "agent_id": None,
+            }
     # --- end harness pre-hook ---
 
     try:
@@ -356,7 +355,9 @@ def create_agent(
 
         agent = None
         try:
-            from nano_strix.agents.deep_analysis_lib.deep_agent import DeepAnalyseAgent  # type: ignore[import-untyped]  # noqa: F811
+            from nano_strix.agents.deep_analysis_lib.deep_agent import (
+                DeepAnalyseAgent,  # type: ignore[import-untyped]  # noqa: F811
+            )
         except ImportError:
             with _agent_graph_lock:
                 _agent_instances[child_state.agent_id] = None
@@ -728,7 +729,6 @@ def view_agent_graph(agent_state: AgentState | None = None) -> dict[str, Any]:
         }
 
         # --- harness: include stage progress ---
-        from nano_strix.agents.deep_analysis_lib.stage_state import get_stage_state_manager
         sm = get_stage_state_manager()
         stage_info = sm.to_dict()
         if stage_info:

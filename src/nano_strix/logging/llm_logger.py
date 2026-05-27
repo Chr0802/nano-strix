@@ -50,7 +50,7 @@ class LLMLogger:
                 event="llm_request_full",
                 data={
                     "model": model,
-                    "messages": messages,
+                    "message": messages[-1] if messages else {},
                     "tools": tools or [],
                     "messages_count": len(messages),
                     "tools_count": len(tools) if tools else 0,

@@ -9,14 +9,14 @@ from __future__ import annotations
 
 import json
 import threading
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from nano_strix.agents.deep_analysis_lib.contracts import (
     CONTRACTS,
     StageContract,
     StageValidationResult,
-    get_contract,
 )
 from nano_strix.agents.deep_analysis_lib.stage_state import (
     StageStatus,
@@ -83,14 +83,21 @@ def run_pre_create_agent(
             return result
         # Mark stage as in_progress
         sm = get_stage_state_manager()
-        sm.transition(contract.stage_name, StageStatus.IN_PROGRESS, "input validation passed")
+        sm.transition(
+            contract.stage_name, StageStatus.IN_PROGRESS, "input validation passed"
+        )
 
     # Run any additional registered hooks
     with _hooks_lock:
         for hook in _HOOKS["pre_create_agent"]:
             try:
-                hook_result = hook(agent_name=agent_name, workspace_root=workspace_root)
-                if isinstance(hook_result, StageValidationResult) and not hook_result.passed:
+                hook_result = hook(
+                    agent_name=agent_name, workspace_root=workspace_root
+                )
+                if (
+                    isinstance(hook_result, StageValidationResult)
+                    and not hook_result.passed
+                ):
                     return hook_result
             except Exception as exc:
                 return StageValidationResult(
@@ -125,11 +132,15 @@ def run_post_agent_finish(
     sm = get_stage_state_manager()
 
     if contract is not None:
-        sm.transition(contract.stage_name, StageStatus.VALIDATING, "output validation started")
+        sm.transition(
+            contract.stage_name, StageStatus.VALIDATING, "output validation started"
+        )
         result = contract.check_output(findings)
 
         if result.passed:
-            sm.transition(contract.stage_name, StageStatus.COMPLETED, "output validation passed")
+            sm.transition(
+                contract.stage_name, StageStatus.COMPLETED, "output validation passed"
+            )
             _persist_stage_result(contract.stage_name, findings, workspace_root)
             return result
 
@@ -162,7 +173,9 @@ def run_post_agent_finish(
             except Exception:
                 pass  # hooks must not crash the agent
 
-    return StageValidationResult(passed=True, stage_name=agent_name, check_type="output")
+    return StageValidationResult(
+        passed=True, stage_name=agent_name, check_type="output"
+    )
 
 
 def run_pre_root_finish(findings: list[dict[str, Any]]) -> StageValidationResult:
@@ -206,7 +219,8 @@ def _resolve_contract(agent_name: str) -> StageContract | None:
         "reviewrefiner": "review",
         "reviewagent": "review",
     }
-    stage_key = name_to_stage.get(agent_name.lower().replace(" ", "").replace("_", "").replace("-", ""))
+    normalized = agent_name.lower().replace(" ", "").replace("_", "").replace("-", "")
+    stage_key = name_to_stage.get(normalized)
     if stage_key:
         return CONTRACTS.get(stage_key)
     # Also try direct match against CONTRACTS keys
@@ -225,8 +239,9 @@ def _persist_stage_result(
     logs_dir.mkdir(parents=True, exist_ok=True)
     output_path = logs_dir / f"stage_{stage_name}_result.json"
     try:
+        payload = {"stage": stage_name, "findings": findings}
         output_path.write_text(
-            json.dumps({"stage": stage_name, "findings": findings}, indent=2, ensure_ascii=False)
+            json.dumps(payload, indent=2, ensure_ascii=False)
         )
         sm = get_stage_state_manager()
         sm.add_artifact(stage_name, str(output_path))
