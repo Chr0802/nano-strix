@@ -15,8 +15,11 @@ from typing import Any
 
 from nano_strix.agents.deep_analysis_lib.contracts import (
     CONTRACTS,
+    MANIFEST_SCHEMA,
     StageContract,
     StageValidationResult,
+    ValidationError,
+    validate_against_schema,
 )
 from nano_strix.agents.deep_analysis_lib.stage_state import (
     StageStatus,
@@ -138,10 +141,22 @@ def run_post_agent_finish(
         result = contract.check_output(findings)
 
         if result.passed:
+            # For classify stage, additionally validate that file_manifest.json
+            # was created and conforms to the manifest schema.
+            if contract.stage_name == "classify" and workspace_root is not None:
+                manifest_result = _validate_manifest_file(workspace_root)
+                if not manifest_result.passed:
+                    sm.transition(
+                        contract.stage_name,
+                        StageStatus.IN_PROGRESS,
+                        "manifest validation failed",
+                    )
+                    return manifest_result
+
             sm.transition(
                 contract.stage_name, StageStatus.COMPLETED, "output validation passed"
             )
-            _persist_stage_result(contract.stage_name, findings, workspace_root)
+            _persist_stage_result(contract.stage_name, findings, workspace_root, StageStatus.COMPLETED)
             return result
 
         # Validation failed — handle retry
@@ -162,6 +177,8 @@ def run_post_agent_finish(
                 StageStatus.FAILED,
                 f"retries exhausted ({max_retries})",
             )
+            # Persist even on failure so there is a record of what was produced
+            _persist_stage_result(contract.stage_name, findings, workspace_root, StageStatus.FAILED)
             result.errors.insert(0, f"ALL RETRIES EXHAUSTED ({max_retries}):")
             return result
 
@@ -201,13 +218,18 @@ def run_pre_root_finish(findings: list[dict[str, Any]]) -> StageValidationResult
     return StageValidationResult(passed=True, stage_name="root", check_type="output")
 
 
+import re
+
 def _resolve_contract(agent_name: str) -> StageContract | None:
     """Map agent names to stage contracts.
 
     The LLM uses descriptive names like ``FileClassifier``, ``StaticScanner``,
-    etc.  We match them to stage contract keys.
+    etc.  We match them to stage contract keys.  Normalisation strips
+    whitespace, punctuation and special characters so that names like
+    ``"Review & Refine"`` still resolve correctly.
     """
-    name_to_stage = {
+    # Hardcoded map (normalised name → contract key)
+    name_to_stage: dict[str, str] = {
         "fileclassifier": "classify",
         "classifyagent": "classify",
         "staticscanner": "scan",
@@ -218,32 +240,102 @@ def _resolve_contract(agent_name: str) -> StageContract | None:
         "crosslinkagent": "cross-link",
         "reviewrefiner": "review",
         "reviewagent": "review",
+        "reviewrefine": "review",
+        "review": "review",
     }
-    normalized = agent_name.lower().replace(" ", "").replace("_", "").replace("-", "")
+
+    # Normalise: lowercase + strip all non-alphanumeric chars
+    normalized = re.sub(r"[^a-z0-9]", "", agent_name.lower())
+
+    # 1) Exact match against hardcoded map
     stage_key = name_to_stage.get(normalized)
     if stage_key:
         return CONTRACTS.get(stage_key)
-    # Also try direct match against CONTRACTS keys
-    return CONTRACTS.get(agent_name.lower())
+
+    # 2) Substring match — check if any known key is *contained* in the
+    #    normalised name (handles LLM-invented names like
+    #    "ReviewAndRefineAgent-42")
+    for known_key, stage_key in name_to_stage.items():
+        if known_key in normalized or normalized in known_key:
+            return CONTRACTS.get(stage_key)
+
+    # 3) Direct match against CONTRACTS keys (with normalisation)
+    for ckey in CONTRACTS:
+        if re.sub(r"[^a-z0-9]", "", ckey.lower()) == normalized:
+            return CONTRACTS.get(ckey)
+
+    # 4) Substring match against CONTRACTS keys
+    for ckey in CONTRACTS:
+        ckey_normalized = re.sub(r"[^a-z0-9]", "", ckey.lower())
+        if ckey_normalized in normalized or normalized in ckey_normalized:
+            return CONTRACTS.get(ckey)
+
+    return None
+
+
+def _validate_manifest_file(workspace_root: Path) -> StageValidationResult:
+    """Validate that file_manifest.json exists and conforms to MANIFEST_SCHEMA."""
+    manifest_path = workspace_root / "file_manifest.json"
+    if not manifest_path.exists():
+        return StageValidationResult(
+            passed=False,
+            stage_name="classify",
+            check_type="output",
+            errors=[f"file_manifest.json not found at {manifest_path}"],
+        )
+    try:
+        data = json.loads(manifest_path.read_text())
+    except json.JSONDecodeError as e:
+        return StageValidationResult(
+            passed=False,
+            stage_name="classify",
+            check_type="output",
+            errors=[f"file_manifest.json is not valid JSON: {e}"],
+        )
+    try:
+        validate_against_schema(data, MANIFEST_SCHEMA)
+    except ValidationError as e:
+        return StageValidationResult(
+            passed=False,
+            stage_name="classify",
+            check_type="output",
+            errors=[f"file_manifest.json schema validation failed: {e}"],
+        )
+    return StageValidationResult(passed=True, stage_name="classify", check_type="output")
 
 
 def _persist_stage_result(
     stage_name: str,
     findings: list[dict[str, Any]],
     workspace_root: Path | None,
+    status: StageStatus | None = None,
 ) -> None:
-    """Save validated stage output to a JSON file for downstream pre-hooks."""
+    """Save stage output to a JSON file for downstream pre-hooks and debugging.
+
+    Called on both success and retry-exhausted failure so there is always
+    a record of what each stage produced.
+    """
     if workspace_root is None:
         return
     logs_dir = workspace_root / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
     output_path = logs_dir / f"stage_{stage_name}_result.json"
     try:
-        payload = {"stage": stage_name, "findings": findings}
+        sm = get_stage_state_manager()
+        stage = sm.get(stage_name)
+        resolved_status = (
+            status.value if status else
+            (stage.status.value if stage else "unknown")
+        )
+        payload = {
+            "stage": stage_name,
+            "status": resolved_status,
+            "findings_count": len(findings),
+            "findings": findings,
+        }
         output_path.write_text(
             json.dumps(payload, indent=2, ensure_ascii=False)
         )
-        sm = get_stage_state_manager()
         sm.add_artifact(stage_name, str(output_path))
     except OSError:
         pass  # persistence failure should not crash validation

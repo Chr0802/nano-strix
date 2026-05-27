@@ -680,6 +680,100 @@ def agent_finish(
 
 
 @register_tool
+def root_finish(
+    agent_state: AgentState | None = None,
+    result_summary: str = "",
+    findings: list[str] | None = None,
+    success: bool = True,
+    final_recommendations: list[str] | None = None,
+) -> dict[str, Any]:
+    """Complete the root orchestrator agent and finalise the pipeline.
+
+    Only callable by the root agent (agent with no parent).  Runs the
+    pre-root-finish harness hook which validates that all five pipeline
+    stages have completed before allowing the root to finish.
+    """
+    agent_state = _resolve_agent_state(agent_state)
+    try:
+        # Guard: only root agents (no parent) can use this
+        if agent_state.parent_id is not None:
+            return {
+                "agent_completed": False,
+                "error": (
+                    "root_finish can only be used by the root orchestrator "
+                    "(agent with no parent). Sub-agents must use agent_finish."
+                ),
+            }
+
+        agent_id = agent_state.agent_id
+        if agent_id not in _agent_graph["nodes"]:
+            return {"agent_completed": False, "error": "Root agent not found in graph"}
+
+        findings = findings or []
+        final_recommendations = final_recommendations or []
+
+        # --- harness: validate all stages completed ---
+        post_result = run_pre_root_finish(findings)
+        if not post_result.passed:
+            return {
+                "agent_completed": False,
+                "error": post_result.to_message(),
+                "hint": (
+                    "Not all stages have completed. Check the stage progress "
+                    "with view_agent_graph and ensure each stage agent has "
+                    "called agent_finish."
+                ),
+            }
+        # --- end harness ---
+
+        agent_node = _agent_graph["nodes"][agent_id]
+        agent_node["status"] = "finished" if success else "failed"
+        agent_node["finished_at"] = _now_iso()
+        agent_node["result"] = {
+            "summary": result_summary,
+            "findings": findings,
+            "success": success,
+            "recommendations": final_recommendations,
+        }
+
+        agent_state.final_result = agent_node["result"]
+        agent_state.completed = True
+
+        if _graph_logger:
+            _graph_logger.log_agent_finished(
+                agent_id=agent_id,
+                success=success,
+                findings_count=len(findings),
+                result_summary=result_summary,
+            )
+
+        _running_agents.pop(agent_id, None)
+
+    except Exception as e:
+        return {
+            "agent_completed": False,
+            "error": f"Failed to finish root agent: {e}",
+        }
+    else:
+        return {
+            "agent_completed": True,
+            "pipeline_finished": True,
+            "completion_summary": {
+                "agent_id": agent_id,
+                "agent_name": agent_node["name"],
+                "success": success,
+                "findings_count": len(findings),
+                "has_recommendations": bool(final_recommendations),
+                "finished_at": agent_node["finished_at"],
+            },
+            "message": (
+                "Root orchestrator has finished. The deep analysis pipeline is complete. "
+                "All five stages (classify → scan → analyze → cross-link → review) have been executed."
+            ),
+        }
+
+
+@register_tool
 def view_agent_graph(agent_state: AgentState | None = None) -> dict[str, Any]:
     """Return a text view of the current agent tree."""
     agent_state = _resolve_agent_state(agent_state)
